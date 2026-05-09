@@ -42,6 +42,8 @@ struct ActiveTripView: View {
     @State private var anchorPoints: [AnchorPoint] = []
     @State private var frequentRoutes: [FrequentRouteSegment] = []
     @State private var settlement: TripSettlement?
+    @State private var cardCollapsed = false
+    @State private var dragOffset: CGFloat = 0
 
     private let tripService = TripService.shared
 
@@ -54,13 +56,19 @@ struct ActiveTripView: View {
 
     var body: some View {
         GeometryReader { geo in
+            let expandedHeight: CGFloat = min(max(360, geo.size.height * 0.58), 560)
+            let collapsedHeight: CGFloat = 90
+            let cardHeight = cardCollapsed ? collapsedHeight : expandedHeight
+
             ZStack(alignment: .bottom) {
                 // Map
                 mapView
                     .ignoresSafeArea(edges: .top)
 
-                // Bottom Card (constrained so the map remains visible)
-                tripInfoCard(maxHeight: min(max(360, geo.size.height * 0.58), 560))
+                // Bottom Card
+                tripInfoCard(maxHeight: expandedHeight, collapsedHeight: collapsedHeight)
+                    .offset(y: cardCollapsed ? expandedHeight - collapsedHeight + dragOffset : max(0, dragOffset))
+                    .animation(.spring(response: 0.35, dampingFraction: 0.8), value: cardCollapsed)
 
                 // Floating Chat Button
                 VStack {
@@ -69,7 +77,8 @@ struct ActiveTripView: View {
                         Spacer()
                         chatButton
                             .padding(.trailing, 20)
-                            .padding(.bottom, min(max(280, geo.size.height * 0.34), 380))
+                            .padding(.bottom, cardCollapsed ? collapsedHeight + 12 : min(max(280, geo.size.height * 0.34), 380))
+                            .animation(.spring(response: 0.35, dampingFraction: 0.8), value: cardCollapsed)
                     }
                 }
             }
@@ -424,14 +433,51 @@ struct ActiveTripView: View {
 
     // MARK: - Trip Info Card
 
-    private func tripInfoCard(maxHeight: CGFloat) -> some View {
+    private func tripInfoCard(maxHeight: CGFloat, collapsedHeight: CGFloat) -> some View {
         VStack(spacing: 0) {
-            // Drag handle
-            RoundedRectangle(cornerRadius: 3)
-                .fill(Color.gray.opacity(0.4))
-                .frame(width: 40, height: 5)
-                .padding(.top, 12)
-                .padding(.bottom, 10)
+            // Drag handle — tappable and draggable
+            VStack(spacing: 6) {
+                RoundedRectangle(cornerRadius: 3)
+                    .fill(Color.gray.opacity(0.4))
+                    .frame(width: 40, height: 5)
+                if cardCollapsed {
+                    Text("Tap to expand")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(.textTertiary)
+                }
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.top, 12)
+            .padding(.bottom, 10)
+            .contentShape(Rectangle())
+            .onTapGesture {
+                withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                    cardCollapsed.toggle()
+                    dragOffset = 0
+                }
+            }
+            .gesture(
+                DragGesture()
+                    .onChanged { value in
+                        let translation = value.translation.height
+                        if cardCollapsed {
+                            dragOffset = min(0, translation)
+                        } else {
+                            dragOffset = max(0, translation)
+                        }
+                    }
+                    .onEnded { value in
+                        let threshold: CGFloat = 60
+                        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                            if !cardCollapsed && value.translation.height > threshold {
+                                cardCollapsed = true
+                            } else if cardCollapsed && value.translation.height < -threshold {
+                                cardCollapsed = false
+                            }
+                            dragOffset = 0
+                        }
+                    }
+            )
 
             ScrollView(showsIndicators: false) {
                 VStack(spacing: 16) {

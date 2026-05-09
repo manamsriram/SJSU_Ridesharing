@@ -1,6 +1,7 @@
 import SwiftUI
 import MapKit
 import Combine
+import CoreLocation
 
 struct DriverTripDetailsView: View {
     let trip: Trip
@@ -21,6 +22,32 @@ struct DriverTripDetailsView: View {
     @State private var deleteTripError: String?
     @State private var anchorPoints: [AnchorPoint] = []
     @State private var isLoadingAnchors = true
+    @State private var showActiveTripView = false
+
+    @State private var ratingTarget: BookingWithRider? = nil
+    @State private var driverSelectedStars = 5
+    @State private var driverRatingComment = ""
+    @State private var isSubmittingDriverRating = false
+
+    @ObservedObject private var locationService = LocationTrackingService.shared
+
+    private func hasRatedPassenger(_ bookingId: String) -> Bool {
+        UserDefaults.standard.bool(forKey: "driver_rated_\(bookingId)")
+    }
+
+    // Computed properties matching ActiveTripView pattern
+    private var driverCoordinate: CLLocationCoordinate2D? {
+        locationService.currentLocation?.coordinate
+    }
+
+    private var focusedPickupCoordinate: CLLocationCoordinate2D? {
+        // Get pickup from first approved booking
+        if let firstApproved = approvedBookings.first,
+           let pickup = firstApproved.pickupLocation {
+            return CLLocationCoordinate2D(latitude: pickup.lat, longitude: pickup.lng)
+        }
+        return trip.originPoint?.clLocationCoordinate2D
+    }
 
     private var totalSeatsBooked: Int {
         passengers.reduce(0) { $0 + $1.seatsBooked }
@@ -111,6 +138,9 @@ struct DriverTripDetailsView: View {
 
                     // Passengers section
                     passengersSection
+
+                    // Simulation controls (debug)
+                    simulationControls
                 }
                 .padding(.horizontal, 16)
                 .padding(.bottom, 24)
@@ -192,6 +222,38 @@ struct DriverTripDetailsView: View {
             }
         }
         .navigationViewStyle(.stack)
+        .safeAreaInset(edge: .bottom) {
+            let canStartTrip: Bool = {
+                    if trip.status == .pending {
+                        let now = Date()
+                        let oneHourBefore = trip.departureTime.addingTimeInterval(-3600)
+                        return Calendar.current.isDateInToday(trip.departureTime) && now >= oneHourBefore
+                    }
+                    return trip.status == .enRoute || trip.status == .arrived || trip.status == .inProgress
+                }()
+                if canStartTrip {
+                Button(action: { showActiveTripView = true }) {
+                    HStack(spacing: 8) {
+                        Image(systemName: trip.status == .pending ? "car.fill" : "location.fill")
+                        Text(trip.status == .pending ? "Start Trip" : "View Active Trip")
+                            .fontWeight(.semibold)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 14)
+                    .background(Color.brand)
+                    .foregroundColor(.white)
+                    .cornerRadius(14)
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 8)
+                }
+            }
+        }
+        .fullScreenCover(isPresented: $showActiveTripView) {
+            NavigationView {
+                ActiveTripView(trip: trip, isDriver: true)
+                    .environmentObject(authVM)
+            }
+        }
         .task {
             await loadPassengers()
             await loadAnchorPoints()
@@ -204,6 +266,9 @@ struct DriverTripDetailsView: View {
                 includesTabBarClearance: false
             )
             .environmentObject(authVM)
+        }
+        .sheet(item: $ratingTarget) { _ in
+            passengerRatingSheet
         }
     }
 
@@ -457,20 +522,126 @@ struct DriverTripDetailsView: View {
                     .foregroundColor(stateColor)
             }
             Spacer()
-            Button {
-                Task {
-                    try? await BookingService.shared.deleteBooking(bookingId: booking.id)
-                    passengers.removeAll { $0.id == booking.id }
+            HStack(spacing: 12) {
+                if booking.bookingState == .completed && !hasRatedPassenger(booking.id) {
+                    Button {
+                        driverSelectedStars = 5
+                        driverRatingComment = ""
+                        ratingTarget = booking
+                    } label: {
+                        Image(systemName: "star.fill")
+                            .font(.system(size: 14))
+                            .foregroundColor(.brandOrange)
+                    }
                 }
-            } label: {
-                Image(systemName: "trash")
-                    .font(.system(size: 14))
-                    .foregroundColor(.red)
+                Button {
+                    Task {
+                        try? await BookingService.shared.deleteBooking(bookingId: booking.id)
+                        passengers.removeAll { $0.id == booking.id }
+                    }
+                } label: {
+                    Image(systemName: "trash")
+                        .font(.system(size: 14))
+                        .foregroundColor(.red)
+                }
             }
         }
         .padding(12)
         .background(Color(.systemGray6))
         .cornerRadius(12)
+    }
+
+    @ViewBuilder
+    private var passengerRatingSheet: some View {
+        NavigationView {
+            VStack(spacing: 24) {
+                if let target = ratingTarget {
+                    VStack(spacing: 8) {
+                        Circle()
+                            .fill(Color.brand.opacity(0.12))
+                            .frame(width: 72, height: 72)
+                            .overlay(
+                                Text(String(target.riderName.prefix(1)).uppercased())
+                                    .font(.system(size: 28, weight: .bold))
+                                    .foregroundColor(.brand)
+                            )
+                        Text(target.riderName)
+                            .font(.system(size: 18, weight: .semibold))
+                            .foregroundColor(.textPrimary)
+                        Text("How was this passenger?")
+                            .font(.system(size: 15))
+                            .foregroundColor(.textSecondary)
+                    }
+
+                    HStack(spacing: 12) {
+                        ForEach(1...5, id: \.self) { star in
+                            Button(action: { driverSelectedStars = star }) {
+                                Image(systemName: star <= driverSelectedStars ? "star.fill" : "star")
+                                    .font(.system(size: 32))
+                                    .foregroundColor(star <= driverSelectedStars ? .brandOrange : .textTertiary)
+                            }
+                        }
+                    }
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Comment (optional)")
+                            .font(.system(size: 13))
+                            .foregroundColor(.textSecondary)
+                        TextEditor(text: $driverRatingComment)
+                            .frame(height: 80)
+                            .padding(10)
+                            .background(Color(.systemGray6))
+                            .cornerRadius(10)
+                    }
+                    .padding(.horizontal)
+
+                    Button(action: {
+                        Task {
+                            isSubmittingDriverRating = true
+                            let comment = driverRatingComment.trimmingCharacters(in: .whitespacesAndNewlines)
+                            do {
+                                _ = try await BookingService.shared.rateBooking(
+                                    id: target.id,
+                                    score: driverSelectedStars,
+                                    comment: comment.isEmpty ? nil : comment
+                                )
+                                UserDefaults.standard.set(true, forKey: "driver_rated_\(target.id)")
+                                ratingTarget = nil
+                            } catch {
+                                print("Rating error: \(error)")
+                            }
+                            isSubmittingDriverRating = false
+                        }
+                    }) {
+                        Group {
+                            if isSubmittingDriverRating {
+                                ProgressView().tint(.white)
+                            } else {
+                                Text("Submit Rating")
+                                    .font(.system(size: 16, weight: .semibold))
+                            }
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 14)
+                        .background(Color.brand)
+                        .foregroundColor(.white)
+                        .cornerRadius(14)
+                    }
+                    .padding(.horizontal)
+                    .disabled(isSubmittingDriverRating)
+                }
+                Spacer()
+            }
+            .padding(.top, 32)
+            .navigationTitle("Rate Passenger")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("Skip") { ratingTarget = nil }
+                        .foregroundColor(.textSecondary)
+                }
+            }
+        }
     }
 
     private func loadPassengers() async {
@@ -566,6 +737,138 @@ struct DriverTripDetailsView: View {
             cancelTripError = "Failed to cancel trip. Please try again."
         }
         isCancellingTrip = false
+    }
+
+    // MARK: - Simulation Controls
+
+    @ViewBuilder private var simulationControls: some View {
+        // Only show for pending trips
+        if trip.status == .pending {
+            VStack(alignment: .leading, spacing: 12) {
+                Divider()
+                Text("Trip Simulation")
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundColor(.textTertiary)
+
+                HStack(spacing: 8) {
+                    Button("Simulate Full Ride") {
+                        Task { await simulateFullRide() }
+                    }
+                    .debugPill()
+
+                    Button("Simulate → Pickup") {
+                        Task { await simulateToPickup() }
+                    }
+                    .debugPill()
+
+                    Button("Simulate → Dropoff") {
+                        Task { await simulateToDropoff() }
+                    }
+                    .debugPill()
+                }
+
+                Button("Reset Simulation") {
+                    resetSimulation()
+                }
+                .debugPill()
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.top, 8)
+        }
+    }
+
+    private func simulateFullRide() async {
+        let start = trip.originPoint?.clLocationCoordinate2D ?? AppConstants.sjsuCoordinate
+        let pickup = getPickupCoordinate() ?? start
+        let dropoff = trip.destinationPoint?.clLocationCoordinate2D ?? start
+
+        // Phase 1: enRoute
+        LocationTrackingService.shared.startSimulatedMovement(
+            from: start,
+            to: pickup,
+            tripId: trip.id,
+            sendToBackend: false,
+            updateDriverFeedOnly: false,
+            stepInterval: 0.22,
+            steps: 65
+        )
+        try? await Task.sleep(nanoseconds: 30_000_000_000)
+
+        // Phase 2: arrived
+        try? await Task.sleep(nanoseconds: 900_000_000)
+
+        // Phase 3: inProgress
+        LocationTrackingService.shared.startSimulatedMovement(
+            from: pickup,
+            to: dropoff,
+            tripId: trip.id,
+            sendToBackend: false,
+            updateDriverFeedOnly: false,
+            stepInterval: 0.22,
+            steps: 75
+        )
+        try? await Task.sleep(nanoseconds: 35_000_000_000)
+
+        // Phase 4: completed
+        LocationTrackingService.shared.stopSimulatedMovement()
+    }
+
+    private func simulateToPickup() async {
+        let start = trip.originPoint?.clLocationCoordinate2D ?? AppConstants.sjsuCoordinate
+        let end = getPickupCoordinate() ?? start
+
+        LocationTrackingService.shared.startSimulatedMovement(
+            from: start,
+            to: end,
+            tripId: trip.id,
+            sendToBackend: false,
+            updateDriverFeedOnly: false,
+            stepInterval: 0.28,
+            steps: 55
+        )
+    }
+
+    private func simulateToDropoff() async {
+        let start = trip.originPoint?.clLocationCoordinate2D ?? AppConstants.sjsuCoordinate
+        let end = trip.destinationPoint?.clLocationCoordinate2D ?? start
+
+        LocationTrackingService.shared.startSimulatedMovement(
+            from: start,
+            to: end,
+            tripId: trip.id,
+            sendToBackend: false,
+            updateDriverFeedOnly: false,
+            stepInterval: 0.28,
+            steps: 55
+        )
+    }
+
+    private func resetSimulation() {
+        LocationTrackingService.shared.stopSimulatedMovement()
+    }
+
+    private func getPickupCoordinate() -> CLLocationCoordinate2D? {
+        // Get pickup location from first approved booking
+        if let firstApproved = approvedBookings.first,
+           let pickup = firstApproved.pickupLocation {
+            return CLLocationCoordinate2D(latitude: pickup.lat, longitude: pickup.lng)
+        }
+        return trip.originPoint?.clLocationCoordinate2D
+    }
+}
+
+
+// MARK: - Debug Pill Helper
+
+private extension View {
+    func debugPill() -> some View {
+        self
+            .font(.system(size: 12, weight: .semibold))
+            .foregroundColor(.brand)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 7)
+            .background(Color.brand.opacity(0.1))
+            .cornerRadius(8)
     }
 }
 

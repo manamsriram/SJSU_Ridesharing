@@ -13,7 +13,6 @@ struct DriverHomeView: View {
 
     // ── Accepted trip navigation ───────────────────────────────────────────────
     @State private var acceptedActiveTrip: Trip? = nil
-    @State private var showAcceptedTripNav = false
 
     // ── Posted rides navigation ────────────────────────────────────────────────
     @State private var showCreateTrip = false
@@ -39,12 +38,21 @@ struct DriverHomeView: View {
         }
     }
 
+    // Pending trips today with at least one paid rider — shown in banner
+    private var readyToStartTrips: [Trip] {
+        profileVM.driverTrips.filter {
+            $0.status == .pending &&
+            Calendar.current.isDateInToday($0.departureTime) &&
+            ($0.totalPayout ?? 0) > 0
+        }
+    }
+
     private var currentActiveTrip: Trip? { activeDriverTrips.first }
 
     private var todayCompletedTrips: [Trip] {
-        profileVM.driverTrips.filter {
-            $0.status == .completed &&
-            Calendar.current.isDateInToday($0.departureTime)
+        let cutoff = Date().addingTimeInterval(-24 * 3600)
+        return profileVM.driverTrips.filter {
+            $0.status == .completed && $0.updatedAt >= cutoff
         }
     }
 
@@ -170,7 +178,6 @@ struct DriverHomeView: View {
                                     if let trip = try? await TripService.shared.getTrip(id: request.tripId) {
                                         await MainActor.run {
                                             acceptedActiveTrip = trip
-                                            showAcceptedTripNav = true
                                         }
                                     }
                                 }
@@ -188,17 +195,15 @@ struct DriverHomeView: View {
                     }
                 }
             }
-            .fullScreenCover(isPresented: $showAcceptedTripNav) {
-                if let trip = acceptedActiveTrip {
-                    NavigationView {
-                        ActiveTripView(trip: trip, isDriver: true)
-                            .environmentObject(authVM)
-                    }
+            .fullScreenCover(item: $acceptedActiveTrip) { trip in
+                NavigationView {
+                    ActiveTripView(trip: trip, isDriver: true)
+                        .environmentObject(authVM)
                 }
             }
             // ── Active Ride Banner ─────────────────────────────────────────────
             .overlay(alignment: .bottom) {
-                if let trip = currentActiveTrip {
+                if let trip = currentActiveTrip ?? readyToStartTrips.first {
                     activeRideBanner(trip: trip)
                 }
             }
@@ -216,7 +221,6 @@ struct DriverHomeView: View {
     private func activeRideBanner(trip: Trip) -> some View {
         Button(action: {
             acceptedActiveTrip = trip
-            showAcceptedTripNav = true
         }) {
             HStack(spacing: 14) {
                 ZStack {
@@ -228,7 +232,7 @@ struct DriverHomeView: View {
                         .foregroundColor(.white)
                 }
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Active Ride")
+                    Text(trip.status == .pending ? "Start Ride" : "Active Ride")
                         .font(.system(size: 15, weight: .bold))
                         .foregroundColor(.white)
                     Text("To \(trip.destination)")
