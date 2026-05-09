@@ -272,7 +272,7 @@ struct RouteMapView: UIViewRepresentable {
         }
 
         private func routeKey(origin: CLLocationCoordinate2D, destination: CLLocationCoordinate2D) -> String {
-            "\(origin.latitude.rounded(toPlaces: 5)),\(origin.longitude.rounded(toPlaces: 5))|\(destination.latitude.rounded(toPlaces: 5)),\(destination.longitude.rounded(toPlaces: 5))"
+            "\(origin.latitude.rounded(toPlaces: 3)),\(origin.longitude.rounded(toPlaces: 3))|\(destination.latitude.rounded(toPlaces: 3)),\(destination.longitude.rounded(toPlaces: 3))"
         }
 
         private func shouldSkipDirectionsRefresh(origin: CLLocationCoordinate2D, destination: CLLocationCoordinate2D) -> Bool {
