@@ -15,6 +15,7 @@ struct ActiveTripView: View {
     let trip: Trip
     let booking: Booking?
     let isDriver: Bool
+    let isSimulationMode: Bool  // Flag for sandbox simulation
 
     @State private var tripStatus: TripStatus
     @State private var showChat = false
@@ -47,10 +48,11 @@ struct ActiveTripView: View {
 
     private let tripService = TripService.shared
 
-    init(trip: Trip, booking: Booking? = nil, isDriver: Bool) {
+    init(trip: Trip, booking: Booking? = nil, isDriver: Bool, isSimulationMode: Bool = false) {
         self.trip = trip
         self.booking = booking
         self.isDriver = isDriver
+        self.isSimulationMode = isSimulationMode
         _tripStatus = State(initialValue: trip.status)
     }
 
@@ -110,6 +112,12 @@ struct ActiveTripView: View {
             Text(errorMessage ?? "Something went wrong")
         }
         .task {
+            // Auto-run simulation in simulation mode
+            if isSimulationMode {
+                await simulateFullRideAsDriver()
+                return
+            }
+
             startTracking()
             if let points = try? await tripService.getAnchorPoints(tripId: trip.id), !points.isEmpty {
                 anchorPoints = points
@@ -1310,6 +1318,21 @@ struct ActiveTripView: View {
     // MARK: - Functions
 
     private func updateState(to newStatus: TripStatus) async {
+        // In simulation mode, only update local state, not backend
+        if isSimulationMode {
+            await MainActor.run {
+                withAnimation { tripStatus = newStatus }
+            }
+            UINotificationFeedbackGenerator().notificationOccurred(.success)
+
+            // Auto-dismiss when simulation completes
+            if newStatus == .completed {
+                try? await Task.sleep(nanoseconds: 2_000_000_000)  // Brief pause
+                dismiss()
+            }
+            return
+        }
+
         isUpdatingState = true
         defer { isUpdatingState = false }
 
@@ -1359,6 +1382,11 @@ struct ActiveTripView: View {
     }
 
     private func startTracking() {
+        // Skip real tracking in simulation mode
+        if isSimulationMode {
+            return
+        }
+
         stopTracking()
 
         if isDriver {

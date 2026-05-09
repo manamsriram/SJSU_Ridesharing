@@ -24,7 +24,6 @@ struct DriverHomeView: View {
     @State private var notificationChatDestination: DriverNotificationChatDestination?
 
     // ── Today stats ────────────────────────────────────────────────────────────
-    @State private var todayTripCount = 0
     @AppStorage("hasCompletedFirstTrip") private var hasCompletedFirstTrip = false
 
     // ── Timers ─────────────────────────────────────────────────────────────────
@@ -54,6 +53,12 @@ struct DriverHomeView: View {
         return profileVM.driverTrips.filter {
             $0.status == .completed && $0.updatedAt >= cutoff
         }
+    }
+
+    private var todayTripCount: Int { todayCompletedTrips.count }
+
+    private var todayEarnings: Double {
+        todayCompletedTrips.compactMap { $0.totalPayout }.reduce(0, +)
     }
 
     // ── Body ───────────────────────────────────────────────────────────────────
@@ -346,10 +351,10 @@ struct DriverHomeView: View {
                 VStack(spacing: 6) {
                     Text(todayTripCount == 0
                          ? "$0.00"
-                         : String(format: "$%.2f", Double(todayTripCount) * 5.0))
+                         : String(format: "$%.2f", todayEarnings))
                         .font(.system(size: 28, weight: .bold, design: .rounded))
                         .foregroundColor(todayTripCount == 0 ? .textSecondary : .brandGreen)
-                    Text("estimated")
+                    Text("earned")
                         .font(.system(size: 12, weight: .medium))
                         .foregroundColor(.textSecondary)
                 }
@@ -369,8 +374,6 @@ struct DriverHomeView: View {
         guard let id = authVM.currentUser?.id else { return }
         await profileVM.loadDriverTrips(driverId: id)
         await refreshNotificationBadge()
-
-        todayTripCount = todayCompletedTrips.count
 
         // Once the driver has completed any trip, permanently dismiss the onboarding section.
         if !hasCompletedFirstTrip &&

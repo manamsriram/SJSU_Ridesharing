@@ -1081,6 +1081,14 @@ export const capturePayment = async (
        WHERE user_id = $2`,
       [capturedAmount, driverId]
     ).catch(() => {}); // non-fatal
+
+    // Mark payment row as captured so iOS and earnings queries reflect correct status
+    await pool.query(
+      `UPDATE payments
+       SET status = 'captured', amount = $1, updated_at = current_timestamp
+       WHERE booking_id = $2`,
+      [capturedAmount, bookingId]
+    ).catch(() => {}); // non-fatal
   }
 
   await pool.query(

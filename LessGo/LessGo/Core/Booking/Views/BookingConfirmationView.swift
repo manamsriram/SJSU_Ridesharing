@@ -1568,18 +1568,19 @@ private struct BookingRow: View {
     }
 
     private var paymentStatusLabel: String {
+        if booking.bookingState == .completed { return "Paid" }
         switch booking.payment?.status {
         case .captured: return "Paid"
         case .pending: return "Payment Held"
         case .refunded: return "Refunded"
         case .failed: return "Failed"
         case .none:
-            // payment_intent_id set means card is held; no row in payments table yet
             return booking.paymentIntentId != nil ? "Payment Held" : "Quoted"
         }
     }
 
     private var paymentStatusPillColor: Color {
+        if booking.bookingState == .completed { return .brandGreen }
         switch booking.payment?.status {
         case .captured: return .brandGreen
         case .pending: return .brandOrange
@@ -1608,6 +1609,14 @@ private struct BookingRideDetailView: View {
     @State private var paymentSucceeded = false
     @State private var paymentSheet: PaymentSheet?
     @State private var shouldPresentPaymentSheet = false
+    @State private var showRatingSheet = false
+    @State private var selectedStars = 5
+    @State private var ratingComment = ""
+    @State private var isSubmittingRating = false
+
+    private var hasRated: Bool {
+        UserDefaults.standard.bool(forKey: "rated_\(booking.id)")
+    }
 
     private var currentBooking: Booking {
         vm.bookings.first(where: { $0.id == booking.id }) ?? booking
@@ -1762,12 +1771,14 @@ private struct BookingRideDetailView: View {
 
     private var paymentStatusBadge: some View {
         let (label, color): (String, Color) = {
-            switch booking.payment?.status {
+            if currentBooking.bookingState == .completed { return ("Paid", .brandGreen) }
+            switch currentBooking.payment?.status {
             case .captured:  return ("Paid", .brandGreen)
             case .pending:   return ("Payment Held", .brandOrange)
             case .refunded:  return ("Refunded", .brand)
             case .failed:    return ("Failed", .brandRed)
-            case .none:      return ("Quoted", .textSecondary)
+            case .none:
+                return currentBooking.paymentIntentId != nil ? ("Payment Held", .brandOrange) : ("Quoted", .textSecondary)
             }
         }()
         return Text(label)
@@ -2250,8 +2261,108 @@ private struct BookingRideDetailView: View {
                     actionPill(title: "Cancel Booking", icon: "xmark.circle.fill", fill: Color.brandRed.opacity(0.08), fg: .brandRed)
                 }
             }
+
+            // Rider: rate driver after trip completes
+            if !showAsDriver && currentBooking.bookingState == .completed
+                && currentBooking.trip?.driver != nil && !hasRated {
+                Button(action: { showRatingSheet = true }) {
+                    actionPill(title: "Rate Your Driver", icon: "star.fill", fill: Color.brandOrange.opacity(0.1), fg: .brandOrange)
+                }
+                .sheet(isPresented: $showRatingSheet) {
+                    detailRatingSheet
+                }
+            }
         }
         .cardStyle(padding: 20, cornerRadius: 20)
+    }
+
+    @ViewBuilder
+    private var detailRatingSheet: some View {
+        NavigationView {
+            VStack(spacing: 24) {
+                VStack(spacing: 8) {
+                    if let driver = currentBooking.trip?.driver {
+                        AsyncImage(url: URL(string: driver.profilePicture ?? "")) { image in
+                            image.resizable().scaledToFill()
+                        } placeholder: {
+                            Circle().fill(Color.brand.opacity(0.15))
+                        }
+                        .frame(width: 72, height: 72)
+                        .clipShape(Circle())
+                        Text(driver.name)
+                            .font(.system(size: 18, weight: .semibold))
+                            .foregroundColor(.textPrimary)
+                    }
+                    Text("How was your ride?")
+                        .font(.system(size: 15))
+                        .foregroundColor(.textSecondary)
+                }
+                HStack(spacing: 12) {
+                    ForEach(1...5, id: \.self) { star in
+                        Button(action: { selectedStars = star }) {
+                            Image(systemName: star <= selectedStars ? "star.fill" : "star")
+                                .font(.system(size: 32))
+                                .foregroundColor(star <= selectedStars ? .brandOrange : .textTertiary)
+                        }
+                    }
+                }
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Comment (optional)")
+                        .font(.system(size: 13))
+                        .foregroundColor(.textSecondary)
+                    TextEditor(text: $ratingComment)
+                        .frame(height: 80)
+                        .padding(10)
+                        .background(Color(.systemGray6))
+                        .cornerRadius(10)
+                }
+                .padding(.horizontal)
+                Button(action: {
+                    Task {
+                        isSubmittingRating = true
+                        let comment = ratingComment.trimmingCharacters(in: .whitespacesAndNewlines)
+                        let success = await vm.rateBooking(
+                            id: booking.id,
+                            score: selectedStars,
+                            comment: comment.isEmpty ? nil : comment
+                        )
+                        isSubmittingRating = false
+                        if success {
+                            UserDefaults.standard.set(true, forKey: "rated_\(booking.id)")
+                            showRatingSheet = false
+                            await authVM.refreshUser()
+                            await vm.loadBookings(asDriver: showAsDriver)
+                        }
+                    }
+                }) {
+                    Group {
+                        if isSubmittingRating {
+                            ProgressView().tint(.white)
+                        } else {
+                            Text("Submit Rating")
+                                .font(.system(size: 16, weight: .semibold))
+                        }
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 14)
+                    .background(Color.brand)
+                    .foregroundColor(.white)
+                    .cornerRadius(14)
+                }
+                .padding(.horizontal)
+                .disabled(isSubmittingRating)
+                Spacer()
+            }
+            .padding(.top, 32)
+            .navigationTitle("Rate Your Driver")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("Skip") { showRatingSheet = false }
+                        .foregroundColor(.textSecondary)
+                }
+            }
+        }
     }
 
     private func actionPill(title: String, icon: String, fill: Color, fg: Color) -> some View {

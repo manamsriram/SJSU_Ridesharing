@@ -28,25 +28,10 @@ struct DriverTripDetailsView: View {
     @State private var driverSelectedStars = 5
     @State private var driverRatingComment = ""
     @State private var isSubmittingDriverRating = false
-
-    @ObservedObject private var locationService = LocationTrackingService.shared
+    @State private var showSimulationView = false
 
     private func hasRatedPassenger(_ bookingId: String) -> Bool {
         UserDefaults.standard.bool(forKey: "driver_rated_\(bookingId)")
-    }
-
-    // Computed properties matching ActiveTripView pattern
-    private var driverCoordinate: CLLocationCoordinate2D? {
-        locationService.currentLocation?.coordinate
-    }
-
-    private var focusedPickupCoordinate: CLLocationCoordinate2D? {
-        // Get pickup from first approved booking
-        if let firstApproved = approvedBookings.first,
-           let pickup = firstApproved.pickupLocation {
-            return CLLocationCoordinate2D(latitude: pickup.lat, longitude: pickup.lng)
-        }
-        return trip.originPoint?.clLocationCoordinate2D
     }
 
     private var totalSeatsBooked: Int {
@@ -54,13 +39,13 @@ struct DriverTripDetailsView: View {
     }
 
     private var totalEarnings: Double {
-        let confirmedFares = approvedBookings.compactMap { $0.fare }
-        if !confirmedFares.isEmpty {
-            return confirmedFares.reduce(0, +)
+        // After completion, use the authoritative trip payout set by the backend
+        if let payout = trip.totalPayout, payout > 0 {
+            return payout
         }
-        // Fall back to pending+approved when no fare data
+        // While active, sum fares from approved/completed/pending passengers
         return passengers
-            .filter { $0.bookingState == .approved || $0.bookingState == .pending }
+            .filter { [.approved, .pending, .completed].contains($0.bookingState) }
             .compactMap { $0.fare }
             .reduce(0, +)
     }
@@ -251,6 +236,12 @@ struct DriverTripDetailsView: View {
         .fullScreenCover(isPresented: $showActiveTripView) {
             NavigationView {
                 ActiveTripView(trip: trip, isDriver: true)
+                    .environmentObject(authVM)
+            }
+        }
+        .fullScreenCover(isPresented: $showSimulationView) {
+            NavigationView {
+                ActiveTripView(trip: trip, isDriver: true, isSimulationMode: true)
                     .environmentObject(authVM)
             }
         }
@@ -468,7 +459,7 @@ struct DriverTripDetailsView: View {
                     }
 
                     let archivedBookings = passengers.filter {
-                        $0.bookingState == .completed || $0.bookingState == .cancelled || $0.bookingState == .rejected
+                        $0.bookingState == .completed || $0.bookingState == .cancelled
                     }
                     if !archivedBookings.isEmpty {
                         VStack(alignment: .leading, spacing: 8) {
@@ -695,10 +686,8 @@ struct DriverTripDetailsView: View {
 
     private func rejectBooking(_ passenger: BookingWithRider) async {
         do {
-            let updated = try await BookingService.shared.rejectBooking(id: passenger.id)
-            if let idx = passengers.firstIndex(where: { $0.id == updated.id }) {
-                passengers[idx] = passengers[idx].withBookingState(updated.bookingState)
-            }
+            _ = try await BookingService.shared.rejectBooking(id: passenger.id)
+            passengers.removeAll { $0.id == passenger.id }
             UINotificationFeedbackGenerator().notificationOccurred(.success)
         } catch {
             print("Error rejecting booking: \(error)")
@@ -753,107 +742,18 @@ struct DriverTripDetailsView: View {
 
                 HStack(spacing: 8) {
                     Button("Simulate Full Ride") {
-                        Task { await simulateFullRide() }
-                    }
-                    .debugPill()
-
-                    Button("Simulate → Pickup") {
-                        Task { await simulateToPickup() }
-                    }
-                    .debugPill()
-
-                    Button("Simulate → Dropoff") {
-                        Task { await simulateToDropoff() }
+                        showSimulationView = true
                     }
                     .debugPill()
                 }
 
-                Button("Reset Simulation") {
-                    resetSimulation()
-                }
-                .debugPill()
+                Text("Opens ActiveTripView in sandbox mode - trip remains pending")
+                    .font(.system(size: 11))
+                    .foregroundColor(.textTertiary)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.top, 8)
         }
-    }
-
-    private func waitForSimulationToFinish(maxSeconds: TimeInterval) async {
-        let started = Date()
-        while locationService.isSimulatingMovement {
-            if Date().timeIntervalSince(started) > maxSeconds { break }
-            try? await Task.sleep(nanoseconds: 150_000_000)
-        }
-    }
-
-    private func simulateFullRide() async {
-        let start = driverCoordinate ?? trip.originPoint?.clLocationCoordinate2D ?? AppConstants.sjsuCoordinate
-        let pickup = focusedPickupCoordinate ?? trip.originPoint?.clLocationCoordinate2D ?? start
-        let dropoff = trip.destinationPoint?.clLocationCoordinate2D ?? pickup
-
-        // Phase 1: enRoute - driver heading to pickup
-        locationService.startSimulatedMovement(
-            from: locationService.currentLocation?.coordinate ?? start,
-            to: pickup,
-            tripId: trip.id,
-            sendToBackend: false,
-            updateDriverFeedOnly: false,
-            stepInterval: 0.22,
-            steps: 65
-        )
-        await waitForSimulationToFinish(maxSeconds: 30)
-
-        // Phase 2: arrived - brief pause at pickup
-        try? await Task.sleep(nanoseconds: 900_000_000)
-
-        // Phase 3: inProgress - heading to dropoff
-        locationService.startSimulatedMovement(
-            from: locationService.currentLocation?.coordinate ?? pickup,
-            to: dropoff,
-            tripId: trip.id,
-            sendToBackend: false,
-            updateDriverFeedOnly: false,
-            stepInterval: 0.22,
-            steps: 75
-        )
-        await waitForSimulationToFinish(maxSeconds: 35)
-
-        // Phase 4: completed
-        locationService.stopSimulatedMovement()
-    }
-
-    private func simulateToPickup() async {
-        let start = driverCoordinate ?? trip.originPoint?.clLocationCoordinate2D ?? AppConstants.sjsuCoordinate
-        let end = focusedPickupCoordinate ?? trip.originPoint?.clLocationCoordinate2D ?? start
-
-        locationService.startSimulatedMovement(
-            from: start,
-            to: end,
-            tripId: trip.id,
-            sendToBackend: false,
-            updateDriverFeedOnly: false,
-            stepInterval: 0.28,
-            steps: 55
-        )
-    }
-
-    private func simulateToDropoff() async {
-        let start = driverCoordinate ?? trip.originPoint?.clLocationCoordinate2D ?? AppConstants.sjsuCoordinate
-        let end = trip.destinationPoint?.clLocationCoordinate2D ?? start
-
-        locationService.startSimulatedMovement(
-            from: start,
-            to: end,
-            tripId: trip.id,
-            sendToBackend: false,
-            updateDriverFeedOnly: false,
-            stepInterval: 0.28,
-            steps: 55
-        )
-    }
-
-    private func resetSimulation() {
-        locationService.stopSimulatedMovement()
     }
 }
 
@@ -1073,18 +973,24 @@ private func formatDeadlineLabel(_ date: Date) -> String {
 }
 
 private func paymentBadge(for passenger: BookingWithRider) -> some View {
+    let paid = passenger.bookingState == .completed
     let held = passenger.paymentIntentId != nil
+    let (icon, label, tint): (String, String, Color) = paid
+        ? ("checkmark.shield.fill", "Paid", .brandGreen)
+        : held
+            ? ("lock.shield.fill", "Payment Held", .brandGreen)
+            : ("clock.badge.exclamationmark.fill", "Awaiting Payment", .brandGold)
     return VStack(alignment: .leading, spacing: 3) {
         HStack(spacing: 4) {
-            Image(systemName: held ? "lock.shield.fill" : "clock.badge.exclamationmark.fill")
+            Image(systemName: icon)
                 .font(.system(size: 10))
-            Text(held ? "Payment Held" : "Awaiting Payment")
+            Text(label)
                 .font(.system(size: 11, weight: .semibold))
         }
-        .foregroundColor(held ? .brandGreen : .brandGold)
+        .foregroundColor(tint)
         .padding(.horizontal, 8)
         .padding(.vertical, 4)
-        .background((held ? Color.brandGreen : Color.brandGold).opacity(0.12))
+        .background(tint.opacity(0.12))
         .cornerRadius(8)
 
         if !held, let deadline = passenger.paymentDeadlineAt {
