@@ -607,6 +607,7 @@ struct DriverTripDetailsView: View {
                                 )
                                 UserDefaults.standard.set(true, forKey: "driver_rated_\(target.id)")
                                 ratingTarget = nil
+                                await authVM.refreshUser()
                             } catch {
                                 print("Rating error: \(error)")
                             }
@@ -777,14 +778,22 @@ struct DriverTripDetailsView: View {
         }
     }
 
-    private func simulateFullRide() async {
-        let start = trip.originPoint?.clLocationCoordinate2D ?? AppConstants.sjsuCoordinate
-        let pickup = getPickupCoordinate() ?? start
-        let dropoff = trip.destinationPoint?.clLocationCoordinate2D ?? start
+    private func waitForSimulationToFinish(maxSeconds: TimeInterval) async {
+        let started = Date()
+        while locationService.isSimulatingMovement {
+            if Date().timeIntervalSince(started) > maxSeconds { break }
+            try? await Task.sleep(nanoseconds: 150_000_000)
+        }
+    }
 
-        // Phase 1: enRoute
-        LocationTrackingService.shared.startSimulatedMovement(
-            from: start,
+    private func simulateFullRide() async {
+        let start = driverCoordinate ?? trip.originPoint?.clLocationCoordinate2D ?? AppConstants.sjsuCoordinate
+        let pickup = focusedPickupCoordinate ?? trip.originPoint?.clLocationCoordinate2D ?? start
+        let dropoff = trip.destinationPoint?.clLocationCoordinate2D ?? pickup
+
+        // Phase 1: enRoute - driver heading to pickup
+        locationService.startSimulatedMovement(
+            from: locationService.currentLocation?.coordinate ?? start,
             to: pickup,
             tripId: trip.id,
             sendToBackend: false,
@@ -792,14 +801,14 @@ struct DriverTripDetailsView: View {
             stepInterval: 0.22,
             steps: 65
         )
-        try? await Task.sleep(nanoseconds: 30_000_000_000)
+        await waitForSimulationToFinish(maxSeconds: 30)
 
-        // Phase 2: arrived
+        // Phase 2: arrived - brief pause at pickup
         try? await Task.sleep(nanoseconds: 900_000_000)
 
-        // Phase 3: inProgress
-        LocationTrackingService.shared.startSimulatedMovement(
-            from: pickup,
+        // Phase 3: inProgress - heading to dropoff
+        locationService.startSimulatedMovement(
+            from: locationService.currentLocation?.coordinate ?? pickup,
             to: dropoff,
             tripId: trip.id,
             sendToBackend: false,
@@ -807,17 +816,17 @@ struct DriverTripDetailsView: View {
             stepInterval: 0.22,
             steps: 75
         )
-        try? await Task.sleep(nanoseconds: 35_000_000_000)
+        await waitForSimulationToFinish(maxSeconds: 35)
 
         // Phase 4: completed
-        LocationTrackingService.shared.stopSimulatedMovement()
+        locationService.stopSimulatedMovement()
     }
 
     private func simulateToPickup() async {
-        let start = trip.originPoint?.clLocationCoordinate2D ?? AppConstants.sjsuCoordinate
-        let end = getPickupCoordinate() ?? start
+        let start = driverCoordinate ?? trip.originPoint?.clLocationCoordinate2D ?? AppConstants.sjsuCoordinate
+        let end = focusedPickupCoordinate ?? trip.originPoint?.clLocationCoordinate2D ?? start
 
-        LocationTrackingService.shared.startSimulatedMovement(
+        locationService.startSimulatedMovement(
             from: start,
             to: end,
             tripId: trip.id,
@@ -829,10 +838,10 @@ struct DriverTripDetailsView: View {
     }
 
     private func simulateToDropoff() async {
-        let start = trip.originPoint?.clLocationCoordinate2D ?? AppConstants.sjsuCoordinate
+        let start = driverCoordinate ?? trip.originPoint?.clLocationCoordinate2D ?? AppConstants.sjsuCoordinate
         let end = trip.destinationPoint?.clLocationCoordinate2D ?? start
 
-        LocationTrackingService.shared.startSimulatedMovement(
+        locationService.startSimulatedMovement(
             from: start,
             to: end,
             tripId: trip.id,
@@ -844,16 +853,7 @@ struct DriverTripDetailsView: View {
     }
 
     private func resetSimulation() {
-        LocationTrackingService.shared.stopSimulatedMovement()
-    }
-
-    private func getPickupCoordinate() -> CLLocationCoordinate2D? {
-        // Get pickup location from first approved booking
-        if let firstApproved = approvedBookings.first,
-           let pickup = firstApproved.pickupLocation {
-            return CLLocationCoordinate2D(latitude: pickup.lat, longitude: pickup.lng)
-        }
-        return trip.originPoint?.clLocationCoordinate2D
+        locationService.stopSimulatedMovement()
     }
 }
 

@@ -561,7 +561,7 @@ export const createRating = async (
     throw new Error('Booking not found');
   }
 
-  if (bookingData.status !== BookingStatus.Completed) {
+  if (bookingData.booking_state !== 'completed') {
     throw new Error('Can only rate completed bookings');
   }
 

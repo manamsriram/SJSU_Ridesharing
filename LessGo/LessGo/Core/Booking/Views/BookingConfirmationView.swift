@@ -1144,6 +1144,7 @@ private struct BookingRow: View {
     @ObservedObject var vm: BookingViewModel
     let showAsDriver: Bool
     var onReport: ((String, String, String?) -> Void)?
+    @EnvironmentObject var authVM: AuthViewModel
 
     @State private var showDeleteConfirm = false
     @State private var showRatingSheet = false
@@ -1530,6 +1531,8 @@ private struct BookingRow: View {
                         if success {
                             UserDefaults.standard.set(true, forKey: "rated_\(booking.id)")
                             showRatingSheet = false
+                            await authVM.refreshUser()
+                            await vm.loadBookings(asDriver: showAsDriver)
                         }
                     }
                 }) {
