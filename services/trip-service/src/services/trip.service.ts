@@ -330,6 +330,9 @@ export const searchTripsNearby = async (
     paramIndex++;
   }
 
+  // Exclude trips departing within 1 hour (pg_cron removes unpaid/unapproved riders at that point)
+  query += ` AND t.departure_time > NOW() + INTERVAL '1 hour'`;
+
   query += ` ORDER BY distance_meters ASC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
   values.push(limit);
   values.push(offset);

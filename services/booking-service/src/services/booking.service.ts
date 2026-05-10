@@ -64,6 +64,13 @@ export const createBooking = async (
     throw new Error('Not enough seats available');
   }
 
+  // Reject bookings within 1 hour of departure (pg_cron cleans up at that boundary)
+  const departureTime = new Date(trip.departure_time);
+  const oneHourFromNow = new Date(Date.now() + 60 * 60 * 1000);
+  if (departureTime <= oneHourFromNow) {
+    throw new Error('Cannot book trips departing within 1 hour');
+  }
+
   // Prevent driver from booking own trip
   if (trip.driver_id === riderId) {
     throw new Error('Drivers cannot book their own trips');

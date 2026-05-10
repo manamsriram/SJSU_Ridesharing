@@ -118,6 +118,9 @@ enum NetworkError: Error {
         }
 
         // Booking errors
+        if msg.contains("departing within 1 hour") || msg.contains("within 1 hour") {
+            return "This trip departs too soon. Bookings must be made at least 1 hour before departure."
+        }
         if msg.contains("quote") || msg.contains("calculate price") {
             return "Unable to calculate the price. Please try again."
         }
