@@ -59,6 +59,10 @@ struct DriverTripDetailsView: View {
         passengers.filter { $0.bookingState == .pending }
     }
 
+    private var isWithinOneHour: Bool {
+        trip.departureTime.timeIntervalSinceNow <= 3600
+    }
+
     private var approvedBookings: [BookingWithRider] {
         passengers.filter { $0.bookingState == .approved }
     }
@@ -120,6 +124,25 @@ struct DriverTripDetailsView: View {
                         .disabled(true)
                         .padding(.top, 8)
 
+                    // 1-hour lock disclaimer
+                    if isWithinOneHour && (trip.status == .pending || trip.status == .enRoute) {
+                        HStack(spacing: 10) {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .foregroundColor(.brandGold)
+                            Text("Trip operations are locked within 1 hour of departure.")
+                                .font(.system(size: 13, weight: .medium))
+                                .foregroundColor(.textPrimary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        .padding(14)
+                        .background(Color.brandGold.opacity(0.12))
+                        .cornerRadius(12)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 12)
+                                .strokeBorder(Color.brandGold.opacity(0.4), lineWidth: 1)
+                        )
+                    }
+
                     // Trip details card
                     tripDetailsCard
 
@@ -169,12 +192,12 @@ struct DriverTripDetailsView: View {
                             if isCancellingTrip {
                                 ProgressView().scaleEffect(0.8)
                             } else {
-                                Text("Cancel Trip")
+                                Text(isWithinOneHour ? "Locked" : "Cancel Trip")
                                     .font(.system(size: 15, weight: .semibold))
-                                    .foregroundColor(.brandRed)
+                                    .foregroundColor(isWithinOneHour ? .textTertiary : .brandRed)
                             }
                         }
-                        .disabled(isCancellingTrip)
+                        .disabled(isCancellingTrip || isWithinOneHour)
                     }
                 }
             }
@@ -444,6 +467,7 @@ struct DriverTripDetailsView: View {
                             ForEach(pendingBookings) { passenger in
                                 PendingBookingCard(
                                     passenger: passenger,
+                                    isLocked: isWithinOneHour,
                                     onApprove: { await approveBooking(passenger) },
                                     onReject: { await rejectBooking(passenger) },
                                     onChat: { openChat(with: passenger) }
@@ -717,6 +741,7 @@ private extension View {
 
 private struct PendingBookingCard: View {
     let passenger: BookingWithRider
+    var isLocked: Bool = false
     let onApprove: () async -> Void
     let onReject: () async -> Void
     let onChat: () -> Void
@@ -852,16 +877,16 @@ private struct PendingBookingCard: View {
                         ProgressView()
                             .frame(width: 36, height: 36)
                     } else {
-                        Image(systemName: "xmark")
+                        Image(systemName: isLocked ? "lock.fill" : "xmark")
                             .font(.system(size: 14, weight: .bold))
-                            .foregroundColor(.brandRed)
+                            .foregroundColor(isLocked ? .textTertiary : .brandRed)
                             .frame(width: 36, height: 36)
-                            .background(Color.brandRed.opacity(0.1))
+                            .background(isLocked ? Color.textTertiary.opacity(0.08) : Color.brandRed.opacity(0.1))
                             .clipShape(Circle())
                     }
                 }
                 .buttonStyle(.plain)
-                .disabled(isRejecting)
+                .disabled(isRejecting || isLocked)
 
                 Button(action: {
                     Task {
@@ -874,16 +899,16 @@ private struct PendingBookingCard: View {
                         ProgressView()
                             .frame(width: 36, height: 36)
                     } else {
-                        Image(systemName: "checkmark")
+                        Image(systemName: isLocked ? "lock.fill" : "checkmark")
                             .font(.system(size: 14, weight: .bold))
-                            .foregroundColor(.brandGreen)
+                            .foregroundColor(isLocked ? .textTertiary : .brandGreen)
                             .frame(width: 36, height: 36)
-                            .background(Color.brandGreen.opacity(0.1))
+                            .background(isLocked ? Color.textTertiary.opacity(0.08) : Color.brandGreen.opacity(0.1))
                             .clipShape(Circle())
                     }
                 }
                 .buttonStyle(.plain)
-                .disabled(isApproving)
+                .disabled(isApproving || isLocked)
             }
         }
         .padding(14)

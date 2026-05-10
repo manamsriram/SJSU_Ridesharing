@@ -19,6 +19,10 @@ const pool = new Pool({
   connectionString: config.databaseUrl,
 });
 
+/** Returns true if the departure is within 1 hour from now (the lock window). */
+const isWithinOneHour = (departureTime: Date): boolean =>
+  departureTime.getTime() - Date.now() <= 60 * 60 * 1000;
+
 const getTripById = async (tripId: string) => {
   const result = await pool.query(
     'SELECT trip_id, driver_id, origin, destination, seats_available, status, departure_time FROM trips WHERE trip_id = $1',
@@ -552,6 +556,10 @@ export const cancelBooking = async (
       throw new Error('Cannot cancel completed booking');
     }
 
+    if (isWithinOneHour(new Date(bookingData.trip.departure_time))) {
+      throw new AppError('Cannot cancel within 1 hour of departure', 423);
+    }
+
     const wasConfirmed = bookingData.status === BookingStatus.Confirmed;
     const wasPending = bookingData.status === BookingStatus.Pending;
 
@@ -796,6 +804,10 @@ export const approveBooking = async (
       throw new Error('Cannot approve a rejected or cancelled booking');
     }
 
+    if (isWithinOneHour(new Date(bookingData.trip.departure_time))) {
+      throw new AppError('Trip is locked 1 hour before departure', 423);
+    }
+
     // Update booking state, clear hold_expires_at, and set payment_deadline_at
     // (trip.departure_time - 1 hour) so the rider knows when to complete payment.
     await client.query(
@@ -851,6 +863,10 @@ export const rejectBooking = async (
 
   if (bookingData.booking_state === 'approved') {
     throw new Error('Cannot reject an approved booking');
+  }
+
+  if (isWithinOneHour(new Date(bookingData.trip.departure_time))) {
+    throw new AppError('Trip is locked 1 hour before departure', 423);
   }
 
   // Update booking state and restore seats atomically
