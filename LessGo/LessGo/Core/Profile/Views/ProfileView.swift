@@ -29,53 +29,58 @@ struct ProfileView: View {
     @AppStorage("appAppearance") private var appAppearanceRawValue = AppAppearance.system.rawValue
     @EnvironmentObject var locationManager: LocationManager
 
+    // Scroll reader for navigating to sections
+    @Namespace private var ratingsSectionId
+
     var body: some View {
         NavigationView {
-            ScrollView {
-                VStack(spacing: 18) {
-                    profileTopBar
+            ScrollViewReader { proxy in
+                ScrollView {
+                    VStack(spacing: 18) {
+                        profileTopBar
 
-                    // ── Profile Header ──
-                    profileHeader
+                        // ── Profile Header ──
+                        profileHeader
 
-                    // ── Verification Status ──
-                    verificationCard
+                        // ── Verification Status ──
+                        verificationCard
 
-                    // ── Role Switcher ──
-                    roleSwitcherCard
+                        // ── Role Switcher ──
+                        roleSwitcherCard
 
-                    // ── Stats Row ──
-                    statsRow
+                        // ── Stats Row ──
+                        statsRow
 
-                    // ── Driver Vehicle Info (drivers only) ──
-                    if authVM.isDriver {
-                        driverVehicleSection
+                        // ── Driver Vehicle Info (drivers only) ──
+                        if authVM.isDriver {
+                            driverVehicleSection
+                        }
+
+                        // ── Quick Actions ──
+                        quickActions(proxy: proxy)
+
+                        // ── Ratings Section ──
+                        if !vm.ratings.isEmpty {
+                            ratingsSection
+                                .id(ratingsSectionId)
+                        }
+
+                        // ── Settings Section ──
+                        settingsSection
+
+                        // ── Account Management ──
+                        accountManagementSection
+
+                        // ── Developer Tools ──
+                        DevToolsSection(vm: devTools)
+
+                        // ── Danger Zone ──
+                        dangerZone
+
+                        Spacer().frame(height: 100)
                     }
-
-                    // ── Quick Actions ──
-                    quickActions
-
-                    // ── Ratings Section ──
-                    if !vm.ratings.isEmpty {
-                        ratingsSection
-                    }
-
-                    // ── Settings Section ──
-                    settingsSection
-
-                    // ── Account Management ──
-                    accountManagementSection
-
-                    // ── Developer Tools ──
-                    DevToolsSection(vm: devTools)
-
-                    // ── Danger Zone ──
-                    dangerZone
-
-                    Spacer().frame(height: 100)
+                    .padding(.top, 8)
                 }
-                .padding(.top, 8)
-            }
             .background(
                 Color.appBackground.ignoresSafeArea()
             )
@@ -130,7 +135,7 @@ struct ProfileView: View {
                 IDVerificationView().environmentObject(authVM)
             }
             .sheet(isPresented: $showTripHistory) {
-                TripHistoryView()
+                TripHistoryView(isDriver: authVM.isDriver)
             }
             .sheet(isPresented: $showChangePassword) {
                 ChangePasswordView().environmentObject(authVM)
@@ -160,8 +165,9 @@ struct ProfileView: View {
             .successMessage(message: vm.successMessage)
         }
     }
+}
 
-    // MARK: - Profile Header
+// MARK: - Profile Header
 
     private var profileTopBar: some View {
         HStack(spacing: 12) {
@@ -797,7 +803,7 @@ struct ProfileView: View {
 
     // MARK: - Quick Actions
 
-    private var quickActions: some View {
+    private func quickActions(proxy: ScrollViewProxy) -> some View {
         VStack(spacing: 12) {
             SectionHeader(title: "Quick Actions")
 
@@ -808,7 +814,9 @@ struct ProfileView: View {
                 .staggeredAppear(index: 0)
 
                 QuickActionCard(icon: "star.fill", label: "My Ratings", color: .brandOrange) {
-                    // scroll to ratings section (handled by UI)
+                    withAnimation {
+                        proxy.scrollTo(ratingsSectionId, anchor: .top)
+                    }
                 }
                 .staggeredAppear(index: 1)
 
@@ -1708,32 +1716,134 @@ private struct SearchablePickerSheet: View {
 // MARK: - Trip History View
 
 struct TripHistoryView: View {
+    let isDriver: Bool
     @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject var authVM: AuthViewModel
     @StateObject private var vm = BookingViewModel()
+
+    private var bookingsGroupedByTrip: [(trip: Trip, bookings: [Booking])] {
+        let completedBookings = vm.bookings.filter { $0.bookingState == .completed }
+        let completedTrips = completedBookings.compactMap { $0.trip }
+
+        return completedTrips.map { trip in
+            let tripBookings = completedBookings.filter { $0.tripId == trip.id }
+            return (trip: trip, bookings: tripBookings)
+        }
+    }
 
     var body: some View {
         NavigationView {
             Group {
-                if vm.isLoading { LoadingRow() }
-                else if vm.bookings.isEmpty {
+                if vm.isLoading {
+                    LoadingRow()
+                } else if bookingsGroupedByTrip.isEmpty {
                     EmptyStateView(icon: "clock.arrow.circlepath", title: "No history", message: "Your completed trips will appear here")
                 } else {
-                    List(vm.bookings.filter { $0.trip?.departureTime ?? Date() < Date().addingTimeInterval(-86400) }) { booking in
-                        if let trip = booking.trip {
-                            VStack(alignment: .leading, spacing: 6) {
-                                Text("\(trip.origin) → \(trip.destination)")
-                                    .font(.system(size: 14, weight: .semibold))
-                                Text(trip.departureTime.tripDateTimeString)
-                                    .font(.system(size: 12)).foregroundColor(.textSecondary)
+                    ScrollView {
+                        LazyVStack(spacing: 14) {
+                            ForEach(bookingsGroupedByTrip, id: \.trip.id) { group in
+                                DriverTripHistoryCard(trip: group.trip, bookings: group.bookings, isDriver: isDriver)
                             }
-                            .padding(.vertical, 4)
                         }
+                        .padding(.top, 14)
+                        .padding(.bottom, 20)
                     }
                 }
             }
+            .background(Color.appBackground.ignoresSafeArea())
             .navigationTitle("Trip History").navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .navigationBarLeading) { Button("Done") { dismiss() } } }
-            .task { await vm.loadBookings() }
+            .task { await vm.loadBookings(asDriver: isDriver) }
+        }
+    }
+}
+
+// MARK: - Driver Trip History Card
+
+private struct DriverTripHistoryCard: View {
+    let trip: Trip
+    let bookings: [Booking]
+    let isDriver: Bool
+    @EnvironmentObject var authVM: AuthViewModel
+    @State private var showDetail = false
+
+    private var completedCount: Int {
+        bookings.filter { $0.bookingState == .completed }.count
+    }
+
+    private var riderNames: String {
+        bookings.compactMap { $0.rider?.name.components(separatedBy: " ").first }
+                .joined(separator: ", ")
+    }
+
+    private func tripStatusColor(_ status: TripStatus) -> Color {
+        switch status {
+        case .pending:   return .brandOrange
+        case .enRoute, .inProgress, .arrived: return .brand
+        case .completed: return .textTertiary
+        case .cancelled: return .brandRed
+        }
+    }
+
+    var body: some View {
+        Button(action: { showDetail = true }) {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("\(trip.origin) → \(trip.destination)")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundColor(.textPrimary)
+                            .lineLimit(1)
+                        Text(trip.departureTime, format: .dateTime.month().day().hour().minute())
+                            .font(.system(size: 12))
+                            .foregroundColor(.textSecondary)
+                    }
+                    Spacer()
+                    Text(trip.status.displayName)
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundColor(tripStatusColor(trip.status))
+                        .padding(.horizontal, 8).padding(.vertical, 3)
+                        .background(tripStatusColor(trip.status).opacity(0.12))
+                        .clipShape(Capsule())
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(.textTertiary)
+                }
+                if isDriver {
+                    HStack(spacing: 8) {
+                        if completedCount > 0 {
+                            Label("\(completedCount) completed", systemImage: "person.fill")
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 10).padding(.vertical, 4)
+                                .background(Color.brandGreen)
+                                .clipShape(Capsule())
+                        }
+                    }
+                    if !riderNames.isEmpty {
+                        Text(riderNames)
+                            .font(.system(size: 12))
+                            .foregroundColor(.textTertiary)
+                    }
+                } else if let driverName = trip.driver?.name {
+                    Label(driverName, systemImage: "car.fill")
+                        .font(.system(size: 12))
+                        .foregroundColor(.textTertiary)
+                }
+            }
+            .padding(AppConstants.cardPadding)
+            .background(Color.cardBackground)
+            .clipShape(RoundedRectangle(cornerRadius: AppConstants.cardRadius, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: AppConstants.cardRadius, style: .continuous)
+                    .strokeBorder(DesignSystem.Colors.border.opacity(0.5), lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
+        .sheet(isPresented: $showDetail) {
+            if isDriver {
+                DriverTripDetailsView(trip: trip).environmentObject(authVM)
+            }
         }
     }
 }
