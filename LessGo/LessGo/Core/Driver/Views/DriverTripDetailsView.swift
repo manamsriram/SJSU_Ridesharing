@@ -37,7 +37,7 @@ struct DriverTripDetailsView: View {
     private var totalSeatsBooked: Int {
         // Only count seats from approved/completed passengers (same filter as earnings)
         passengers
-            .filter { [.approved, .completed].contains($0.bookingState) }
+            .filter { $0.bookingState == .approved || $0.bookingState == .completed }
             .reduce(0) { $0 + $1.seatsBooked }
     }
 
@@ -48,7 +48,7 @@ struct DriverTripDetailsView: View {
         }
         // While active, sum fares from approved/completed/pending passengers
         return passengers
-            .filter { [.approved, .completed].contains($0.bookingState) }
+            .filter { $0.bookingState == .approved || $0.bookingState == .completed }
             .compactMap { $0.fare }
             .reduce(0, +)
     }
