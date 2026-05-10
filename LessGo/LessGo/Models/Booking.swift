@@ -91,6 +91,59 @@ struct Booking: Codable, Identifiable {
         try c.encodeIfPresent(paymentDeadlineAt, forKey: .paymentDeadlineAt)
         try c.encodeIfPresent(cancellationReason, forKey: .cancellationReason)
     }
+
+    /// Returns a copy with status and bookingState forced to cancelled.
+    func asCancelled() -> Booking {
+        Booking(
+            id: id, tripId: tripId, riderId: riderId, seatsBooked: seatsBooked,
+            status: .cancelled, bookingState: .cancelled,
+            createdAt: createdAt, updatedAt: Date(), holdExpiresAt: nil,
+            trip: trip, rider: rider, pickupLocation: pickupLocation,
+            quote: quote, payment: payment, fare: fare,
+            paymentIntentId: paymentIntentId, paymentDeadlineAt: paymentDeadlineAt,
+            cancellationReason: cancellationReason
+        )
+    }
+
+    /// Returns a copy with updated mutable fields, preserving nested objects from the original.
+    func merging(_ updated: Booking) -> Booking {
+        Booking(
+            id: id, tripId: tripId, riderId: riderId, seatsBooked: seatsBooked,
+            status: updated.status,
+            bookingState: updated.bookingState,
+            createdAt: createdAt,
+            updatedAt: updated.updatedAt,
+            holdExpiresAt: updated.holdExpiresAt,
+            trip: updated.trip ?? trip,
+            rider: updated.rider ?? rider,
+            pickupLocation: updated.pickupLocation ?? pickupLocation,
+            quote: updated.quote ?? quote,
+            payment: updated.payment ?? payment,
+            fare: updated.fare ?? fare,
+            paymentIntentId: updated.paymentIntentId ?? paymentIntentId,
+            paymentDeadlineAt: updated.paymentDeadlineAt ?? paymentDeadlineAt,
+            cancellationReason: updated.cancellationReason ?? cancellationReason
+        )
+    }
+
+    private init(
+        id: String, tripId: String, riderId: String, seatsBooked: Int,
+        status: BookingStatus, bookingState: BookingState,
+        createdAt: Date, updatedAt: Date, holdExpiresAt: Date?,
+        trip: Trip?, rider: User?, pickupLocation: PickupLocation?,
+        quote: Quote?, payment: Payment?, fare: Double?,
+        paymentIntentId: String?, paymentDeadlineAt: Date?,
+        cancellationReason: String?
+    ) {
+        self.id = id; self.tripId = tripId; self.riderId = riderId
+        self.seatsBooked = seatsBooked; self.status = status
+        self.bookingState = bookingState; self.createdAt = createdAt
+        self.updatedAt = updatedAt; self.holdExpiresAt = holdExpiresAt
+        self.trip = trip; self.rider = rider; self.pickupLocation = pickupLocation
+        self.quote = quote; self.payment = payment; self.fare = fare
+        self.paymentIntentId = paymentIntentId; self.paymentDeadlineAt = paymentDeadlineAt
+        self.cancellationReason = cancellationReason
+    }
 }
 
 enum BookingStatus: String, Codable {

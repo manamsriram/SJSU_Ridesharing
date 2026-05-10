@@ -34,5 +34,6 @@ router.post('/:id/capture', asyncHandler(paymentController.capture));
 router.post('/:id/cancel', asyncHandler(paymentController.cancel));
 router.post('/:id/refund', asyncHandler(paymentController.refund));
 router.get('/booking/:bookingId', asyncHandler(paymentController.getByBooking));
+router.post('/trip/:tripId/cancel-intents', asyncHandler(paymentController.cancelByTrip));
 
 export default router;

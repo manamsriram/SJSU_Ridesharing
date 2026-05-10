@@ -509,6 +509,10 @@ struct BookingListView: View {
     private var filteredBookings: [Booking] {
         let cutoff = Date().addingTimeInterval(-24 * 3600)
         return vm.bookings.filter { booking in
+            // Expire cancelled/rejected bookings 24h after they were last updated
+            if booking.bookingState == .cancelled || booking.bookingState == .rejected {
+                return booking.updatedAt >= cutoff
+            }
             // Keep completed bookings visible for 24h after completion (updatedAt)
             if booking.bookingState == .completed {
                 return booking.updatedAt >= cutoff
@@ -1154,27 +1158,32 @@ private struct BookingRow: View {
     var onReport: ((String, String, String?) -> Void)?
     @EnvironmentObject var authVM: AuthViewModel
 
-    @State private var showDeleteConfirm = false
     @State private var showRatingSheet = false
     @State private var selectedStars = 5
     @State private var ratingComment = ""
     @State private var isSubmittingRating = false
+    @State private var cancelError: String?
+
+    /// Always read from the live VM array so in-place updates are reflected immediately.
+    private var liveBooking: Booking {
+        vm.bookings.first(where: { $0.id == booking.id }) ?? booking
+    }
 
     private var hasRated: Bool {
         UserDefaults.standard.bool(forKey: "rated_\(booking.id)")
     }
 
     private var chatAvailable: Bool {
-        let activeStates = booking.bookingState == .pending
-            || booking.bookingState == .approved
-            || booking.status == .confirmed
-        let recentlyCompleted = booking.bookingState == .completed
-            && booking.updatedAt > Date().addingTimeInterval(-86400)
+        let activeStates = liveBooking.bookingState == .pending
+            || liveBooking.bookingState == .approved
+            || (liveBooking.status == .confirmed && liveBooking.bookingState != .cancelled)
+        let recentlyCompleted = liveBooking.bookingState == .completed
+            && liveBooking.updatedAt > Date().addingTimeInterval(-86400)
         return activeStates || recentlyCompleted
     }
 
     var statusColor: Color {
-        switch booking.bookingState {
+        switch liveBooking.bookingState {
         case .pending:   return .brandOrange
         case .approved:  return .brandGreen
         case .cancelled: return .brandRed
@@ -1190,26 +1199,26 @@ private struct BookingRow: View {
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 5) {
                         Circle().fill(statusColor).frame(width: 10, height: 10)
-                        Text(booking.bookingState.displayName)
+                        Text(liveBooking.bookingState.displayName)
                             .font(.system(size: 12, weight: .semibold))
                             .foregroundColor(statusColor)
                     }
-                    if booking.bookingState == .cancelled,
-                       booking.cancellationReason == "payment_not_completed" {
+                    if liveBooking.bookingState == .cancelled,
+                       liveBooking.cancellationReason == "payment_not_completed" {
                         Text("Payment not made in time")
                             .font(.system(size: 11))
                             .foregroundColor(.textTertiary)
                     }
                 }
                 Spacer()
-                Text(booking.createdAt.timeAgo)
+                Text(liveBooking.createdAt.timeAgo)
                     .font(.system(size: 12))
                     .foregroundColor(.textTertiary)
             }
 
-            if let trip = booking.trip {
+            if let trip = liveBooking.trip {
                 NavigationLink(
-                    destination: BookingRideDetailView(booking: booking, vm: vm, showAsDriver: showAsDriver)
+                    destination: BookingRideDetailView(booking: liveBooking, vm: vm, showAsDriver: showAsDriver)
                 ) {
                     HStack(spacing: 8) {
                         Image(systemName: "list.bullet.rectangle")
@@ -1286,8 +1295,8 @@ private struct BookingRow: View {
             }
 
             // Driver details for confirmed/completed bookings
-            if (booking.status == .confirmed || booking.bookingState == .completed),
-               let trip = booking.trip, let driver = trip.driver {
+            if (liveBooking.status == .confirmed || liveBooking.bookingState == .completed),
+               let trip = liveBooking.trip, let driver = trip.driver {
                 VStack(alignment: .leading, spacing: 8) {
                     HStack(spacing: 10) {
                         ZStack {
@@ -1325,8 +1334,8 @@ private struct BookingRow: View {
             }
 
             // Track / simulate ride entry (confirmed bookings)
-            if booking.status == .confirmed, let trip = booking.trip {
-                NavigationLink(destination: ActiveTripView(trip: trip, booking: booking, isDriver: showAsDriver)) {
+            if liveBooking.status == .confirmed, liveBooking.bookingState != .cancelled, let trip = liveBooking.trip {
+                NavigationLink(destination: ActiveTripView(trip: trip, booking: liveBooking, isDriver: showAsDriver)) {
                     HStack(spacing: 8) {
                         Image(systemName: [.enRoute, .arrived, .inProgress].contains(trip.status) ? "location.fill" : "sparkles")
                         Text([.enRoute, .arrived, .inProgress].contains(trip.status) ? "Track Trip Live" : "Simulate Ride")
@@ -1347,8 +1356,8 @@ private struct BookingRow: View {
             }
 
             // Chat button for active/recently-completed bookings so riders can reopen chat history
-            if chatAvailable, let trip = booking.trip {
-                if showAsDriver, let rider = booking.rider {
+            if chatAvailable, let trip = liveBooking.trip {
+                if showAsDriver, let rider = liveBooking.rider {
                     NavigationLink(destination: ChatView(tripId: trip.id, otherPartyName: rider.name, isDriver: true, riderId: rider.id)) {
                         HStack(spacing: 8) {
                             Image(systemName: "message.fill")
@@ -1362,7 +1371,7 @@ private struct BookingRow: View {
                         .cornerRadius(10)
                     }
                 } else if !showAsDriver {
-                    NavigationLink(destination: ChatView(tripId: trip.id, otherPartyName: trip.driver?.name ?? "Driver", isDriver: false, riderId: booking.riderId)) {
+                    NavigationLink(destination: ChatView(tripId: trip.id, otherPartyName: trip.driver?.name ?? "Driver", isDriver: false, riderId: liveBooking.riderId)) {
                         HStack(spacing: 8) {
                             Image(systemName: "message.fill")
                             Text("Chat with Driver")
@@ -1378,14 +1387,15 @@ private struct BookingRow: View {
             }
 
             // Cancel button for pending/approved bookings (riders only)
-            if !showAsDriver && (booking.bookingState == .pending || booking.bookingState == .approved) {
+            if !showAsDriver && (liveBooking.bookingState == .pending || liveBooking.bookingState == .approved) {
                 Button(action: {
                     Task {
+                        cancelError = nil
                         let success = await vm.cancelBooking(id: booking.id)
                         if success {
                             UINotificationFeedbackGenerator().notificationOccurred(.success)
-                            // Reload bookings to refresh the list
-                            await vm.loadBookings(asDriver: showAsDriver)
+                        } else {
+                            cancelError = vm.errorMessage ?? "Failed to cancel booking"
                         }
                     }
                 }) {
@@ -1397,10 +1407,16 @@ private struct BookingRow: View {
                         .background(Color.brandRed.opacity(0.08))
                         .cornerRadius(10)
                 }
+                if let err = cancelError {
+                    Text(err)
+                        .font(.system(size: 12))
+                        .foregroundColor(.brandRed)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
             }
 
             // Rate Driver button for completed bookings (rider view only)
-            if !showAsDriver, booking.bookingState == .completed, booking.trip?.driver != nil, !hasRated {
+            if !showAsDriver, liveBooking.bookingState == .completed, liveBooking.trip?.driver != nil, !hasRated {
                 Button(action: { showRatingSheet = true }) {
                     HStack(spacing: 6) {
                         Image(systemName: "star.fill")
@@ -1419,7 +1435,7 @@ private struct BookingRow: View {
             }
 
             // Report button for completed bookings
-            if booking.bookingState == .completed, let trip = booking.trip, let driver = trip.driver {
+            if liveBooking.bookingState == .completed, let trip = liveBooking.trip, let driver = trip.driver {
                 Button(action: {
                     onReport?(driver.id, driver.name, trip.id)
                 }) {
@@ -1437,23 +1453,24 @@ private struct BookingRow: View {
             }
 
             // Remove button for cancelled/rejected bookings
-            if booking.bookingState == .cancelled || booking.bookingState == .rejected {
-                HStack {
-                    Spacer()
-                    Button(action: { showDeleteConfirm = true }) {
-                        HStack(spacing: 4) {
-                            Image(systemName: "trash")
-                                .font(.system(size: 11))
-                            Text("Remove")
-                                .font(.system(size: 12, weight: .medium))
-                        }
-                        .foregroundColor(.brandRed.opacity(0.7))
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 6)
-                        .background(Color.brandRed.opacity(0.07))
-                        .cornerRadius(8)
+            if liveBooking.bookingState == .cancelled || liveBooking.bookingState == .rejected {
+                Button(action: {
+                    Task {
+                        try? await BookingService.shared.deleteBooking(bookingId: booking.id)
+                        await vm.loadBookings(asDriver: showAsDriver)
                     }
-                    .buttonStyle(.plain)
+                }) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "trash")
+                            .font(.system(size: 12))
+                        Text("Delete Booking")
+                            .font(.system(size: 13, weight: .semibold))
+                    }
+                    .foregroundColor(.brandRed)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 10)
+                    .background(Color.brandRed.opacity(0.08))
+                    .cornerRadius(10)
                 }
             }
         }
@@ -1476,17 +1493,6 @@ private struct BookingRow: View {
                 }
         )
         .shadow(color: .black.opacity(0.045), radius: 10, x: 0, y: 4)
-        .confirmationDialog("Remove this booking?", isPresented: $showDeleteConfirm, titleVisibility: .visible) {
-            Button("Delete", role: .destructive) {
-                Task {
-                    try? await BookingService.shared.deleteBooking(bookingId: booking.id)
-                    await vm.loadBookings(asDriver: showAsDriver)
-                }
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("This will permanently remove the booking from your history.")
-        }
     }
 
     @ViewBuilder
@@ -1494,7 +1500,7 @@ private struct BookingRow: View {
         NavigationView {
             VStack(spacing: 24) {
                 VStack(spacing: 8) {
-                    if let driver = booking.trip?.driver {
+                    if let driver = liveBooking.trip?.driver {
                         AsyncImage(url: URL(string: driver.profilePicture ?? "")) { image in
                             image.resizable().scaledToFill()
                         } placeholder: {
@@ -1584,26 +1590,26 @@ private struct BookingRow: View {
     }
 
     private var paymentStatusLabel: String {
-        if booking.bookingState == .completed { return "Paid" }
-        switch booking.payment?.status {
+        if liveBooking.bookingState == .completed { return "Paid" }
+        switch liveBooking.payment?.status {
         case .captured: return "Paid"
         case .pending: return "Payment Held"
         case .refunded: return "Refunded"
         case .failed: return "Failed"
         case .none:
-            return booking.paymentIntentId != nil ? "Payment Held" : "Quoted"
+            return liveBooking.paymentIntentId != nil ? "Payment Held" : "Quoted"
         }
     }
 
     private var paymentStatusPillColor: Color {
-        if booking.bookingState == .completed { return .brandGreen }
-        switch booking.payment?.status {
+        if liveBooking.bookingState == .completed { return .brandGreen }
+        switch liveBooking.payment?.status {
         case .captured: return .brandGreen
         case .pending: return .brandOrange
         case .refunded: return .brand
         case .failed: return .brandRed
         case .none:
-            return booking.paymentIntentId != nil ? .brandOrange : .textSecondary
+            return liveBooking.paymentIntentId != nil ? .brandOrange : .textSecondary
         }
     }
 }
@@ -2251,7 +2257,7 @@ private struct BookingRideDetailView: View {
                 .cornerRadius(10)
             }
 
-            if !showAsDriver && booking.status == .pending {
+            if !showAsDriver && (booking.bookingState == .pending || booking.bookingState == .approved) {
                 Button(action: {
                     Task {
                         _ = await vm.cancelBooking(id: booking.id)

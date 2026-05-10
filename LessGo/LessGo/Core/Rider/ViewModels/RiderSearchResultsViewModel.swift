@@ -45,7 +45,8 @@ class RiderSearchResultsViewModel: ObservableObject {
                 originLng: criteria.originCoordinate.longitude,
                 destinationLat: criteria.destinationCoordinate.latitude,
                 destinationLng: criteria.destinationCoordinate.longitude,
-                departureAfter: criteria.departureTime,
+                departureAfter: criteria.departureTime.addingTimeInterval(-30 * 60),
+                departureBefore: criteria.departureTime.addingTimeInterval(2 * 3600),
                 limit: limit,
                 offset: offset
             )
@@ -79,7 +80,8 @@ class RiderSearchResultsViewModel: ObservableObject {
                 originLng: criteria.originCoordinate.longitude,
                 destinationLat: criteria.destinationCoordinate.latitude,
                 destinationLng: criteria.destinationCoordinate.longitude,
-                departureAfter: criteria.departureTime,
+                departureAfter: criteria.departureTime.addingTimeInterval(-30 * 60),
+                departureBefore: criteria.departureTime.addingTimeInterval(2 * 3600),
                 limit: limit,
                 offset: offset
             )

@@ -202,4 +202,36 @@ export const getPaymentByBooking = async (bookingId: string): Promise<Payment | 
   return result.rows.length > 0 ? result.rows[0] : null;
 };
 
-export default { createPaymentIntent, capturePayment, refundPayment, cancelPayment, getPaymentByBooking };
+/**
+ * Cancel all pending Stripe PaymentIntents for active bookings on a trip.
+ * Called when a driver cancels a trip.
+ */
+export const cancelPaymentIntentsByTripId = async (tripId: string): Promise<{ cancelled: number }> => {
+  const result = await pool.query<{ payment_id: string; stripe_payment_intent_id: string }>(
+    `SELECT p.payment_id, p.stripe_payment_intent_id
+     FROM payments p
+     JOIN bookings b ON p.booking_id = b.booking_id
+     WHERE b.trip_id = $1
+       AND p.status = $2
+       AND b.deleted_at IS NULL`,
+    [tripId, PaymentStatus.Pending]
+  );
+
+  let cancelled = 0;
+  for (const row of result.rows) {
+    try {
+      await stripe.paymentIntents.cancel(row.stripe_payment_intent_id);
+      await pool.query(
+        `UPDATE payments SET status = $1, updated_at = NOW() WHERE payment_id = $2`,
+        [PaymentStatus.Failed, row.payment_id]
+      );
+      cancelled++;
+    } catch (err: any) {
+      console.warn(`[cancelPaymentIntentsByTripId] Failed to cancel ${row.stripe_payment_intent_id}:`, err.message);
+    }
+  }
+
+  return { cancelled };
+};
+
+export default { createPaymentIntent, capturePayment, refundPayment, cancelPayment, getPaymentByBooking, cancelPaymentIntentsByTripId };

@@ -12,6 +12,10 @@ import {
   CandidateTrip,
 } from './matching.service';
 
+/** Returns true if the departure is within 1 hour from now (the lock window). */
+const isWithinOneHour = (departureTime: Date): boolean =>
+  departureTime.getTime() - Date.now() <= 60 * 60 * 1000;
+
 const pool = new Pool({
   connectionString: config.databaseUrl,
 });
@@ -561,34 +565,73 @@ export const updateTrip = async (
 
 /**
  * Cancel trip (set status to cancelled)
- * @param tripId Trip's UUID
- * @param driverId Driver's UUID (for authorization)
- * @returns Updated trip
+ * Blocked within 1 hour of departure.
+ * Cancels all active bookings and releases Stripe holds for paid riders.
  */
 export const cancelTrip = async (tripId: string, driverId: string): Promise<Trip> => {
-  // Verify trip belongs to driver
   const trip = await getTripById(tripId);
-  if (!trip) {
-    throw new Error('Trip not found');
-  }
-  if (trip.driver_id !== driverId) {
-    throw new Error('Unauthorized');
+  if (!trip) throw new Error('Trip not found');
+  if (trip.driver_id !== driverId) throw new Error('Unauthorized');
+
+  if (isWithinOneHour(new Date(trip.departure_time))) {
+    throw new AppError('Cannot cancel trip within 1 hour of departure', 423);
   }
 
-  const query = `
-    UPDATE trips
-    SET status = $1, updated_at = current_timestamp
-    WHERE trip_id = $2
-    RETURNING
-      trip_id, driver_id, origin, destination,
-      ST_X(origin_point::geometry) as origin_lng,
-      ST_Y(origin_point::geometry) as origin_lat,
-      ST_X(destination_point::geometry) as destination_lng,
-      ST_Y(destination_point::geometry) as destination_lat,
-      departure_time, seats_available, recurrence, status, created_at, updated_at
-  `;
+  // Fetch all active bookings for this trip
+  const bookingsResult = await pool.query<{
+    booking_id: string;
+    rider_id: string;
+    seats_booked: number;
+  }>(
+    `SELECT booking_id, rider_id, seats_booked
+     FROM bookings
+     WHERE trip_id = $1
+       AND booking_state NOT IN ('cancelled', 'rejected', 'completed')
+       AND deleted_at IS NULL`,
+    [tripId]
+  );
 
-  const result = await pool.query(query, [TripStatus.Cancelled, tripId]);
+  // Release Stripe holds via payment-service (fire-and-forget)
+  axios.post(`${config.paymentServiceUrl}/payments/trip/${tripId}/cancel-intents`)
+    .catch((err: any) => console.warn(`[cancelTrip] payment-service cancel-intents failed:`, err.message));
+
+  // Bulk-cancel all active bookings
+  if (bookingsResult.rows.length > 0) {
+    await pool.query(
+      `UPDATE bookings
+       SET booking_state = 'cancelled',
+           cancellation_reason = 'trip_cancelled_by_driver',
+           updated_at = NOW()
+       WHERE trip_id = $1
+         AND booking_state NOT IN ('cancelled', 'rejected', 'completed')`,
+      [tripId]
+    );
+
+    // Notify each affected rider (fire-and-forget)
+    for (const b of bookingsResult.rows) {
+      axios.post(`${config.notificationServiceUrl}/notifications/send`, {
+        user_id: b.rider_id,
+        type: 'trip_cancelled_by_driver',
+        title: 'Trip Cancelled',
+        message: `Your driver cancelled the trip from ${trip.origin} to ${trip.destination}. Any payment hold has been released.`,
+        data: { trip_id: tripId },
+      }).catch(() => {});
+    }
+  }
+
+  const result = await pool.query(
+    `UPDATE trips
+     SET status = $1, updated_at = current_timestamp
+     WHERE trip_id = $2
+     RETURNING
+       trip_id, driver_id, origin, destination,
+       ST_X(origin_point::geometry) as origin_lng,
+       ST_Y(origin_point::geometry) as origin_lat,
+       ST_X(destination_point::geometry) as destination_lng,
+       ST_Y(destination_point::geometry) as destination_lat,
+       departure_time, seats_available, recurrence, status, created_at, updated_at`,
+    [TripStatus.Cancelled, tripId]
+  );
   const cancelledTrip = result.rows[0];
 
   return {
@@ -1047,23 +1090,21 @@ export const removeRiderFromRoute = async (tripId: string, riderId: string): Pro
 };
 
 /**
- * Detect bookings that were cancelled by the pg_cron payment-deadline job
- * (cancellation_reason = 'payment_not_completed', route_updated_after_cancel = FALSE),
- * update the trip route by removing the rider, and send notifications.
+ * Detect bookings cancelled by pg_cron jobs (payment_not_completed or driver_no_response),
+ * update the trip route by removing the rider, and send appropriate notifications.
  *
  * Exposed as POST /trips/internal/process-deadline-cancellations.
  */
 export const processDeadlineCancellations = async (): Promise<{ processed: number }> => {
-  // Find newly deadline-cancelled bookings that haven't had their route updated yet
   const query = `
-    SELECT b.booking_id, b.trip_id, b.rider_id, b.seats_booked,
+    SELECT b.booking_id, b.trip_id, b.rider_id, b.seats_booked, b.cancellation_reason,
            u.email AS rider_email, u.name AS rider_name,
            t.origin, t.destination, t.departure_time, t.driver_id
     FROM bookings b
     JOIN users u ON b.rider_id = u.user_id
     JOIN trips  t ON b.trip_id = t.trip_id
     WHERE b.booking_state           = 'cancelled'
-      AND b.cancellation_reason     = 'payment_not_completed'
+      AND b.cancellation_reason     IN ('payment_not_completed', 'driver_no_response')
       AND b.route_updated_after_cancel = FALSE
       AND b.deleted_at IS NULL
   `;
@@ -1073,17 +1114,13 @@ export const processDeadlineCancellations = async (): Promise<{ processed: numbe
 
   for (const row of result.rows) {
     try {
-      // 1. Remove rider from route
       await removeRiderFromRoute(row.trip_id, row.rider_id);
 
-      // 2. Mark route as updated so we don't process it again
       await pool.query(
         `UPDATE bookings SET route_updated_after_cancel = TRUE, updated_at = NOW() WHERE booking_id = $1`,
         [row.booking_id]
       );
 
-      // 3. Send notifications (fire-and-forget; non-fatal)
-      // Find other approved/pending riders on the same trip for the route-update notification
       const otherRidersResult = await pool.query(
         `SELECT rider_id FROM bookings
          WHERE trip_id = $1
@@ -1094,29 +1131,37 @@ export const processDeadlineCancellations = async (): Promise<{ processed: numbe
       );
       const otherPassengerIds: string[] = otherRidersResult.rows.map((r: any) => r.rider_id);
 
-      axios.post(`${config.notificationServiceUrl}/notifications/send/payment-deadline-cancelled`, {
-        rider_id: row.rider_id,
-        rider_email: row.rider_email,
-        driver_id: row.driver_id,
-        other_passenger_ids: otherPassengerIds,
-        trip_origin: row.origin,
-        trip_destination: row.destination,
-        departure_time: row.departure_time,
-      }).catch((err: unknown) => {
-        console.warn(
-          `[processDeadlineCancellations] Notification failed for booking ${row.booking_id}:`,
-          err
-        );
-      });
+      const notifPayload = row.cancellation_reason === 'driver_no_response'
+        ? {
+            rider_id: row.rider_id,
+            rider_email: row.rider_email,
+            driver_id: row.driver_id,
+            other_passenger_ids: otherPassengerIds,
+            trip_origin: row.origin,
+            trip_destination: row.destination,
+            departure_time: row.departure_time,
+            reason: 'driver_no_response',
+            message: "Your ride request wasn't approved in time and has been automatically cancelled.",
+          }
+        : {
+            rider_id: row.rider_id,
+            rider_email: row.rider_email,
+            driver_id: row.driver_id,
+            other_passenger_ids: otherPassengerIds,
+            trip_origin: row.origin,
+            trip_destination: row.destination,
+            departure_time: row.departure_time,
+            reason: 'payment_not_completed',
+          };
 
-      console.log(
-        `[processDeadlineCancellations] Processed booking ${row.booking_id} (trip ${row.trip_id}, rider ${row.rider_id})`
-      );
+      axios.post(`${config.notificationServiceUrl}/notifications/send/payment-deadline-cancelled`, notifPayload)
+        .catch((err: unknown) => {
+          console.warn(`[processDeadlineCancellations] Notification failed for booking ${row.booking_id}:`, err);
+        });
+
+      console.log(`[processDeadlineCancellations] Processed booking ${row.booking_id} (reason: ${row.cancellation_reason})`);
     } catch (err) {
-      console.error(
-        `[processDeadlineCancellations] Error processing booking ${row.booking_id}:`,
-        err
-      );
+      console.error(`[processDeadlineCancellations] Error processing booking ${row.booking_id}:`, err);
     }
   }
 

@@ -19,6 +19,10 @@ const pool = new Pool({
   connectionString: config.databaseUrl,
 });
 
+/** Returns true if the departure is within 1 hour from now (the lock window). */
+const isWithinOneHour = (departureTime: Date): boolean =>
+  departureTime.getTime() - Date.now() <= 60 * 60 * 1000;
+
 const getTripById = async (tripId: string) => {
   const result = await pool.query(
     'SELECT trip_id, driver_id, origin, destination, seats_available, status, departure_time FROM trips WHERE trip_id = $1',
@@ -544,12 +548,26 @@ export const cancelBooking = async (
       throw new Error('Unauthorized');
     }
 
-    if (bookingData.status === BookingStatus.Cancelled) {
+    if (bookingData.status === BookingStatus.Cancelled || bookingData.booking_state === 'cancelled') {
+      // Heal any status/booking_state mismatch before throwing
+      if (bookingData.status !== BookingStatus.Cancelled || bookingData.booking_state !== 'cancelled') {
+        await client.query(
+          `UPDATE bookings SET status = 'cancelled', booking_state = 'cancelled', updated_at = current_timestamp WHERE booking_id = $1`,
+          [bookingId]
+        );
+        await client.query('COMMIT');
+        const healed = await getBookingById(bookingId);
+        return healed!;
+      }
       throw new Error('Booking already cancelled');
     }
 
     if (bookingData.status === BookingStatus.Completed) {
       throw new Error('Cannot cancel completed booking');
+    }
+
+    if (isWithinOneHour(new Date(bookingData.trip.departure_time))) {
+      throw new AppError('Cannot cancel within 1 hour of departure', 423);
     }
 
     const wasConfirmed = bookingData.status === BookingStatus.Confirmed;
@@ -584,7 +602,7 @@ export const cancelBooking = async (
 
     // Update booking status
     await client.query(
-      'UPDATE bookings SET status = $1, hold_expires_at = NULL, updated_at = current_timestamp WHERE booking_id = $2',
+      'UPDATE bookings SET status = $1, booking_state = $1, hold_expires_at = NULL, updated_at = current_timestamp WHERE booking_id = $2',
       [BookingStatus.Cancelled, bookingId]
     );
 
@@ -796,6 +814,10 @@ export const approveBooking = async (
       throw new Error('Cannot approve a rejected or cancelled booking');
     }
 
+    if (isWithinOneHour(new Date(bookingData.trip.departure_time))) {
+      throw new AppError('Trip is locked 1 hour before departure', 423);
+    }
+
     // Update booking state, clear hold_expires_at, and set payment_deadline_at
     // (trip.departure_time - 1 hour) so the rider knows when to complete payment.
     await client.query(
@@ -851,6 +873,10 @@ export const rejectBooking = async (
 
   if (bookingData.booking_state === 'approved') {
     throw new Error('Cannot reject an approved booking');
+  }
+
+  if (isWithinOneHour(new Date(bookingData.trip.departure_time))) {
+    throw new AppError('Trip is locked 1 hour before departure', 423);
   }
 
   // Update booking state and restore seats atomically

@@ -107,10 +107,41 @@ struct TripDetailView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
+    // MARK: - 1-Hour Lock Helpers
+
+    private var isWithinOneHour: Bool {
+        guard let trip = viewModel.trip else { return false }
+        return trip.departureTime.timeIntervalSinceNow <= 3600
+    }
+
+    @ViewBuilder
+    private var lockWindowBanner: some View {
+        if isWithinOneHour {
+            HStack(spacing: 10) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundColor(.brandGold)
+                Text("Bookings and cancellations are locked within 1 hour of departure.")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundColor(.textPrimary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(14)
+            .background(Color.brandGold.opacity(0.12))
+            .cornerRadius(12)
+            .overlay(
+                RoundedRectangle(cornerRadius: 12)
+                    .strokeBorder(Color.brandGold.opacity(0.4), lineWidth: 1)
+            )
+        }
+    }
+
     // MARK: - Trip Content
 
     private func tripContent(trip: TripWithDriver) -> some View {
         VStack(spacing: 20) {
+            // 1-hour lock disclaimer
+            lockWindowBanner
+
             // Driver profile section
             driverProfileSection(trip: trip)
 
@@ -503,18 +534,18 @@ struct TripDetailView: View {
                         if viewModel.isCancelling {
                             ProgressView().tint(.brandRed)
                         } else {
-                            Image(systemName: "xmark")
+                            Image(systemName: isWithinOneHour ? "lock.fill" : "xmark")
                         }
-                        Text(viewModel.isCancelling ? "Cancelling..." : "Cancel Request")
+                        Text(viewModel.isCancelling ? "Cancelling..." : isWithinOneHour ? "Locked (< 1hr)" : "Cancel Request")
                     }
                     .font(.system(size: 15, weight: .semibold))
-                    .foregroundColor(.brandRed)
+                    .foregroundColor(isWithinOneHour ? .textTertiary : .brandRed)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 14)
-                    .background(Color.brandRed.opacity(0.1))
+                    .background(isWithinOneHour ? Color.textTertiary.opacity(0.08) : Color.brandRed.opacity(0.1))
                     .cornerRadius(12)
                 }
-                .disabled(viewModel.isCancelling)
+                .disabled(viewModel.isCancelling || isWithinOneHour)
             }
 
         case .approved:
@@ -643,18 +674,18 @@ struct TripDetailView: View {
                         if viewModel.isCancelling {
                             ProgressView().tint(.brandRed)
                         } else {
-                            Image(systemName: "xmark")
+                            Image(systemName: isWithinOneHour ? "lock.fill" : "xmark")
                         }
-                        Text(viewModel.isCancelling ? "Cancelling..." : "Cancel Booking")
+                        Text(viewModel.isCancelling ? "Cancelling..." : isWithinOneHour ? "Locked (< 1hr)" : "Cancel Booking")
                     }
                     .font(.system(size: 15, weight: .semibold))
-                    .foregroundColor(.brandRed)
+                    .foregroundColor(isWithinOneHour ? .textTertiary : .brandRed)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 14)
-                    .background(Color.brandRed.opacity(0.1))
+                    .background(isWithinOneHour ? Color.textTertiary.opacity(0.08) : Color.brandRed.opacity(0.1))
                     .cornerRadius(12)
                 }
-                .disabled(viewModel.isCancelling)
+                .disabled(viewModel.isCancelling || isWithinOneHour)
             }
 
         case .rejected:
