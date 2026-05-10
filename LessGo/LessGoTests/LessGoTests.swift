@@ -313,6 +313,28 @@ struct LessGoTests {
         #expect(vm.destination == "Campbell, CA")
     }
 
+    @Test @MainActor func isStep1InvalidWhenUserLocationIsSJSU() {
+        let vm = CreateTripViewModel()
+        vm.tripDirection = .toSJSU
+        for sjsuInput in ["San Jose State University", "SJSU", "san jose state", "sjsu campus"] {
+            vm.userLocation = sjsuInput
+            #expect(!vm.isStep1Valid, "isStep1Valid should be false when userLocation is '\(sjsuInput)'")
+        }
+    }
+
+    @Test @MainActor func isStep1InvalidWhenUserLocationIsSJSUFromDirection() {
+        let vm = CreateTripViewModel()
+        vm.tripDirection = .fromSJSU
+        vm.userLocation = "San Jose State University"
+        #expect(!vm.isStep1Valid)
+    }
+
+    @Test @MainActor func isStep1ValidWhenUserLocationIsNotSJSU() {
+        let vm = CreateTripViewModel()
+        vm.userLocation = "Campbell, CA"
+        #expect(vm.isStep1Valid)
+    }
+
     // MARK: - CreateTripViewModel: Recurrence String
 
     @Test @MainActor func recurrenceStringIsNilWhenNotRecurring() {

@@ -39,8 +39,17 @@ class CreateTripViewModel: ObservableObject {
 
     // MARK: - Validation
 
+    private static let sjsuNames: [String] = [
+        "san jose state university", "sjsu", "san jose state"
+    ]
+
+    var isUserLocationSJSU: Bool {
+        let normalized = userLocation.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return Self.sjsuNames.contains(where: { normalized.hasPrefix($0) })
+    }
+
     var isStep0Valid: Bool { true }  // Direction is always valid
-    var isStep1Valid: Bool { !userLocation.isEmpty && userLocation.count >= 3 }
+    var isStep1Valid: Bool { !userLocation.isEmpty && userLocation.count >= 3 && !isUserLocationSJSU }
     var isStep2Valid: Bool { departureDate >= Date().addingTimeInterval(-60) }
     var isStep3Valid: Bool { seatsAvailable >= 1 }
 

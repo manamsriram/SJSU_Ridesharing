@@ -400,8 +400,24 @@ private struct Step1LocationView: View {
                     .cornerRadius(12)
                 }
 
+                // Error: user entered SJSU as their own location
+                if vm.isUserLocationSJSU {
+                    HStack(spacing: 10) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundColor(.orange)
+                        Text("SJSU is already set as your \(vm.tripDirection == .toSJSU ? "destination" : "starting point"). Please enter a different location.")
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundColor(.orange)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .padding(12)
+                    .background(Color.orange.opacity(0.1))
+                    .cornerRadius(10)
+                    .transition(.opacity)
+                }
+
                 // Route Preview
-                if !vm.userLocation.isEmpty {
+                if !vm.userLocation.isEmpty && !vm.isUserLocationSJSU {
                     HStack(spacing: 10) {
                         Image(systemName: "arrow.right.circle.fill")
                             .foregroundColor(.brandGreen)
