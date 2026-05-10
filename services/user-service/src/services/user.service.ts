@@ -363,11 +363,25 @@ export const getDriverEarnings = async (userId: string) => {
   `;
   const thisMonthResult = await pool.query(thisMonthQuery, [userId]);
 
+  const todayQuery = `
+    SELECT COALESCE(SUM(COALESCE(q.final_price, q.max_price)), 0) as today_total,
+           COUNT(*) as today_trips
+    FROM quotes q
+    JOIN bookings b ON q.booking_id = b.booking_id
+    JOIN trips t ON b.trip_id = t.trip_id
+    WHERE t.driver_id = $1
+      AND b.booking_state = 'completed'
+      AND DATE(b.updated_at) = CURRENT_DATE
+  `;
+  const todayResult = await pool.query(todayQuery, [userId]);
+
   return {
     total_earned: totalEarned,
     trips_completed: parseInt(completedTrips.rows[0].count),
     trips_active: parseInt(activeTrips.rows[0].count),
     this_month_earned: parseFloat(thisMonthResult.rows[0].month_total || 0),
+    today_earned: parseFloat(todayResult.rows[0].today_total || 0),
+    today_trips: parseInt(todayResult.rows[0].today_trips || 0),
   };
 };
 

@@ -282,13 +282,18 @@ class ProfileViewModel: ObservableObject {
     // MARK: - Load Driver Trips
 
     func loadDriverTrips(driverId: String) async {
-        isLoading = true
-        defer { isLoading = false }
+        let isFirstLoad = driverTrips.isEmpty
+        if isFirstLoad { isLoading = true }
+        defer { if isFirstLoad { isLoading = false } }
         do {
             // Load all trips for this driver (no status filter) so the driver home
             // screen can compute active trips, today's completions, etc. locally.
             let response = try await tripService.listTrips(driverId: driverId, limit: 50)
-            driverTrips = response.trips
+            // Only replace the array if IDs or statuses changed to avoid unnecessary re-renders.
+            if response.trips.map(\.id) != driverTrips.map(\.id) ||
+               response.trips.map(\.status.rawValue) != driverTrips.map(\.status.rawValue) {
+                driverTrips = response.trips
+            }
         } catch {
             #if DEBUG
             print("[ProfileViewModel] Failed to load driver trips: \(error)")
@@ -378,12 +383,16 @@ class ProfileViewModel: ObservableObject {
         let tripsCompleted: Int
         let tripsActive: Int
         let thisMonthEarned: Double
+        let todayEarned: Double
+        let todayTrips: Int
 
         enum CodingKeys: String, CodingKey {
             case totalEarned = "total_earned"
             case tripsCompleted = "trips_completed"
             case tripsActive = "trips_active"
             case thisMonthEarned = "this_month_earned"
+            case todayEarned = "today_earned"
+            case todayTrips = "today_trips"
         }
     }
 

@@ -113,9 +113,6 @@ struct DriverHomeView: View {
             .task {
                 await refreshDashboardData()
             }
-            .onAppear {
-                Task { await refreshDashboardData() }
-            }
             .onChange(of: authVM.currentUser?.id) { _ in
                 Task { await refreshDashboardData() }
             }
@@ -337,10 +334,11 @@ struct DriverHomeView: View {
 
             HStack(spacing: 0) {
                 VStack(spacing: 6) {
-                    Text(todayTripCount == 0 ? "–" : "\(todayTripCount)")
+                    let todayTrips = profileVM.earnings?.todayTrips ?? 0
+                    Text(todayTrips == 0 ? "–" : "\(todayTrips)")
                         .font(.system(size: 28, weight: .bold, design: .rounded))
-                        .foregroundColor(todayTripCount == 0 ? .textSecondary : .textPrimary)
-                    Text(todayTripCount == 1 ? "trip" : "trips")
+                        .foregroundColor(todayTrips == 0 ? .textSecondary : .textPrimary)
+                    Text(todayTrips == 1 ? "trip" : "trips")
                         .font(.system(size: 12, weight: .medium))
                         .foregroundColor(.textSecondary)
                 }
@@ -349,11 +347,12 @@ struct DriverHomeView: View {
                 Divider().frame(height: 44)
 
                 VStack(spacing: 6) {
-                    Text(todayTripCount == 0
+                    let todayEarned = profileVM.earnings?.todayEarned ?? 0
+                    Text(todayEarned == 0
                          ? "$0.00"
-                         : String(format: "$%.2f", todayEarnings))
+                         : String(format: "$%.2f", todayEarned))
                         .font(.system(size: 28, weight: .bold, design: .rounded))
-                        .foregroundColor(todayTripCount == 0 ? .textSecondary : .brandGreen)
+                        .foregroundColor(todayEarned == 0 ? .textSecondary : .brandGreen)
                     Text("earned")
                         .font(.system(size: 12, weight: .medium))
                         .foregroundColor(.textSecondary)
