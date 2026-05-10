@@ -215,9 +215,7 @@ class BookingViewModel: ObservableObject {
     // MARK: - Cancel Booking
 
     func cancelBooking(id: String) async -> Bool {
-        isLoading = true
         errorMessage = nil
-        defer { isLoading = false }
         do {
             let booking = try await bookingService.cancelBooking(id: id)
             // Update in list

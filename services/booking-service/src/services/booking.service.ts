@@ -592,7 +592,7 @@ export const cancelBooking = async (
 
     // Update booking status
     await client.query(
-      'UPDATE bookings SET status = $1, hold_expires_at = NULL, updated_at = current_timestamp WHERE booking_id = $2',
+      'UPDATE bookings SET status = $1, booking_state = $1, hold_expires_at = NULL, updated_at = current_timestamp WHERE booking_id = $2',
       [BookingStatus.Cancelled, bookingId]
     );
 
