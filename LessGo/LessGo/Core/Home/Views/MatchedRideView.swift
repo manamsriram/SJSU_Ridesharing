@@ -541,7 +541,7 @@ struct MatchedRideView: View {
         // This is a polling-based unread count — lightweight for the action bar badge
         guard let myId = authVM.currentUser?.id else { return }
         do {
-            let messages = try await ChatService.shared.getMessages(tripId: matchedTripId)
+            let messages = try await ChatService.shared.getMessages(tripId: matchedTripId, riderId: myId)
             let unread = messages.filter { $0.senderId != myId }.count
             // We only show badge if chat is not open, but reset when opened
             if !showChat {

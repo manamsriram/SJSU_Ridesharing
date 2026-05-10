@@ -1843,8 +1843,238 @@ private struct DriverTripHistoryCard: View {
         .sheet(isPresented: $showDetail) {
             if isDriver {
                 DriverTripDetailsView(trip: trip).environmentObject(authVM)
+            } else {
+                RiderTripDetailsView(trip: trip).environmentObject(authVM)
             }
         }
+    }
+}
+
+// MARK: - Rider Trip Details View
+
+private struct RiderTripDetailsView: View {
+    let trip: Trip
+    @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject var authVM: AuthViewModel
+    @State private var driver: User?
+    @State private var isLoading = true
+    @State private var errorMessage: String?
+
+    var body: some View {
+        NavigationView {
+            ScrollView {
+                VStack(spacing: 20) {
+                    if isLoading {
+                        ProgressView()
+                            .frame(maxWidth: .infinity)
+                            .padding(48)
+                    } else if let error = errorMessage {
+                        VStack(spacing: 12) {
+                            Image(systemName: "exclamationmark.triangle")
+                                .font(.system(size: 32))
+                                .foregroundColor(.brandRed)
+                            Text(error)
+                                .font(.system(size: 14))
+                                .foregroundColor(.textSecondary)
+                                .multilineTextAlignment(.center)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(44)
+                    } else {
+                        // Driver profile section
+                        driverProfileSection
+
+                        // Trip details card
+                        tripDetailsCard
+
+                        // Status card
+                        statusCard
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.bottom, 24)
+            }
+            .background(Color.appBackground.ignoresSafeArea())
+            .navigationTitle("Trip Details")
+            .navigationBarTitleDisplayMode(.large)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button(action: { dismiss() }) {
+                        HStack(spacing: 4) {
+                            Image(systemName: "xmark")
+                        }
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundColor(.textPrimary)
+                    }
+                }
+            }
+            .task {
+                await loadDriver()
+            }
+        }
+        .navigationViewStyle(.stack)
+    }
+
+    private var driverProfileSection: some View {
+        VStack(spacing: 12) {
+            HStack(spacing: 16) {
+                // Driver photo
+                AsyncImage(url: URL(string: driver?.profilePicture ?? "")) { phase in
+                    switch phase {
+                    case .empty:
+                        Circle()
+                            .fill(Color.textTertiary.opacity(0.2))
+                            .frame(width: 64, height: 64)
+                    case .success(let image):
+                        image
+                            .resizable()
+                            .aspectRatio(contentMode: .fill)
+                            .frame(width: 64, height: 64)
+                            .clipShape(Circle())
+                    case .failure:
+                        Circle()
+                            .fill(Color.textTertiary.opacity(0.2))
+                            .frame(width: 64, height: 64)
+                            .overlay(
+                                Text((driver?.name ?? "D").prefix(1).uppercased())
+                                    .font(.system(size: 24, weight: .bold))
+                                    .foregroundColor(.textSecondary)
+                            )
+                    @unknown default:
+                        EmptyView()
+                    }
+                }
+
+                // Driver info
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(driver?.name ?? "Unknown Driver")
+                        .font(.system(size: 18, weight: .bold))
+                        .foregroundColor(.textPrimary)
+
+                    HStack(spacing: 4) {
+                        Image(systemName: "star.fill")
+                            .font(.system(size: 12))
+                        Text(String(format: "%.1f", driver?.rating ?? 0.0))
+                            .font(.system(size: 14))
+                    }
+                    .foregroundColor(.brandGold)
+                }
+
+                Spacer()
+            }
+        }
+        .padding(16)
+        .background(Color.cardBackground)
+        .cornerRadius(16)
+        .overlay(
+            RoundedRectangle(cornerRadius: 16)
+                .strokeBorder(DesignSystem.Colors.border.opacity(0.7), lineWidth: 1)
+        )
+    }
+
+    private var tripDetailsCard: some View {
+        VStack(spacing: 16) {
+            detailRow(
+                icon: "mappin.circle.fill",
+                iconColor: .brand,
+                title: "Pickup",
+                value: trip.origin
+            )
+            Divider()
+            detailRow(
+                icon: "location.fill",
+                iconColor: .brandGreen,
+                title: "Drop-off",
+                value: trip.destination
+            )
+            Divider()
+            detailRow(
+                icon: "clock",
+                iconColor: .textSecondary,
+                title: "Departure",
+                value: formatDateTime(trip.departureTime)
+            )
+        }
+        .padding(16)
+        .background(Color.cardBackground)
+        .cornerRadius(16)
+        .overlay(
+            RoundedRectangle(cornerRadius: 16)
+                .strokeBorder(DesignSystem.Colors.border.opacity(0.7), lineWidth: 1)
+        )
+    }
+
+    private var statusCard: some View {
+        VStack(spacing: 16) {
+            HStack(spacing: 12) {
+                Image(systemName: trip.status.iconName)
+                    .font(.system(size: 20))
+                    .foregroundColor(trip.status == .completed ? .brandGreen : .textTertiary)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(trip.status.displayName)
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundColor(.textPrimary)
+                    Text(trip.status == .completed ? "This trip has been completed." : "Trip status")
+                        .font(.system(size: 13))
+                        .foregroundColor(.textSecondary)
+                }
+                Spacer()
+            }
+        }
+        .padding(16)
+        .background(Color.cardBackground)
+        .cornerRadius(16)
+        .overlay(
+            RoundedRectangle(cornerRadius: 16)
+                .strokeBorder(DesignSystem.Colors.border.opacity(0.7), lineWidth: 1)
+        )
+    }
+
+    private func detailRow(icon: String, iconColor: Color, title: String, value: String) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: icon)
+                .font(.system(size: 16))
+                .foregroundColor(iconColor)
+                .frame(width: 24)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.system(size: 12))
+                    .foregroundColor(.textSecondary)
+                Text(value)
+                    .font(.system(size: 15, weight: .medium))
+                    .foregroundColor(.textPrimary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer()
+        }
+    }
+
+    private func formatDateTime(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .short
+        return formatter.string(from: date)
+    }
+
+    private func loadDriver() async {
+        isLoading = true
+        errorMessage = nil
+
+        // Use the driver from trip if available
+        if let tripDriver = trip.driver {
+            driver = tripDriver
+            isLoading = false
+            return
+        }
+
+        // Otherwise fetch driver by ID
+        do {
+            driver = try await UserService.shared.getUserProfile(id: trip.driverId)
+        } catch {
+            errorMessage = "Failed to load driver information"
+            print("Error loading driver: \(error)")
+        }
+        isLoading = false
     }
 }
 

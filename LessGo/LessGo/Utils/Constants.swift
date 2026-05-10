@@ -7,22 +7,23 @@ enum APIConfig {
     /// Configured per-environment using .xcconfig files.
     /// For hosted-only deployments, loopback/localhost values are ignored.
     static var baseURL: String {
-#if DEBUG
-        return "http://192.168.68.78:3000/api"
-#else
-        // Priority 1: Build config via Info.plist.
+        // Priority 1: Scheme env var override (works in both DEBUG and Release).
+        if let override = ProcessInfo.processInfo.environment["LESSGO_API_BASE_URL"],
+           !override.isEmpty, let url = URL(string: override) {
+            return url.absoluteString
+        }
+
+        // Priority 2: Build config via Info.plist (set by xcconfig).
         if let bundleURL = Bundle.main.infoDictionary?["API_BASE_URL"] as? String,
            let safeBundleURL = sanitizeHostedURL(bundleURL) {
             return safeBundleURL
         }
 
-        // Priority 2: Optional scheme override for hosted endpoints only.
-        if let override = ProcessInfo.processInfo.environment["LESSGO_API_BASE_URL"],
-           let safeOverride = sanitizeHostedURL(override) {
-            return safeOverride
-        }
-
-        // Priority 3: Hosted fallback.
+#if DEBUG
+        // Priority 3 (DEBUG only): local dev server fallback.
+        return "http://192.168.68.78:3000/api"
+#else
+        // Priority 3 (Release): hosted fallback.
         return "https://lessgo-zeta.vercel.app/api"
 #endif
     }
