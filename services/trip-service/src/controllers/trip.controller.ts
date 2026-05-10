@@ -733,8 +733,13 @@ export const sendMessage = async (req: AuthRequest, res: Response): Promise<void
         const bookings = extractBookingsArray(bookingsResponse.data);
 
         senderName = trip.driver?.name || 'Driver';
-        for (const booking of bookings) {
-          if (booking?.rider_id && booking.rider_id !== req.user.userId) recipients.add(booking.rider_id);
+        // If driver is messaging a specific rider, only notify that rider
+        if (riderId) {
+          recipients.add(riderId);
+        } else {
+          for (const booking of bookings) {
+            if (booking?.rider_id && booking.rider_id !== req.user.userId) recipients.add(booking.rider_id);
+          }
         }
       } else {
         senderName = 'Rider';
