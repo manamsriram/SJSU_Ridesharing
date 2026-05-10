@@ -259,6 +259,7 @@ struct DriverTripDetailsView: View {
                 tripId: trip.id,
                 otherPartyName: destination.otherPartyName,
                 isDriver: true,
+                riderId: destination.riderId,
                 includesTabBarClearance: false
             )
             .environmentObject(authVM)
@@ -650,7 +651,8 @@ struct DriverTripDetailsView: View {
     private func openChat(with passenger: BookingWithRider) {
         chatDestination = DriverNotificationChatDestination(
             tripId: trip.id,
-            otherPartyName: passenger.riderName
+            otherPartyName: passenger.riderName,
+            riderId: passenger.riderId
         )
     }
 

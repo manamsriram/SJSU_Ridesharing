@@ -267,6 +267,7 @@ struct ActiveTripView: View {
                 tripId: trip.id,
                 otherPartyName: otherPartyName,
                 isDriver: isDriver,
+                riderId: isDriver ? booking?.rider?.id : authVM.currentUser?.id,
                 includesTabBarClearance: false
             )
             .environmentObject(authVM)

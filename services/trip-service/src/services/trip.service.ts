@@ -728,15 +728,16 @@ export const getTripLocation = async (tripId: string): Promise<any> => {
 export const sendMessage = async (
   tripId: string,
   senderId: string,
-  messageText: string
+  messageText: string,
+  riderId?: string
 ): Promise<any> => {
   const query = `
-    INSERT INTO messages (trip_id, sender_id, message_text)
-    VALUES ($1, $2, $3)
-    RETURNING message_id, trip_id, sender_id, message_text, created_at, read_at
+    INSERT INTO messages (trip_id, sender_id, message_text, rider_id)
+    VALUES ($1, $2, $3, $4)
+    RETURNING message_id, trip_id, sender_id, message_text, created_at, read_at, rider_id
   `;
 
-  const result = await pool.query(query, [tripId, senderId, messageText]);
+  const result = await pool.query(query, [tripId, senderId, messageText, riderId ?? null]);
   return result.rows[0];
 };
 
@@ -746,7 +747,7 @@ export const sendMessage = async (
  * @param limit Maximum number of messages to return
  * @returns Array of messages
  */
-export const getTripMessages = async (tripId: string, limit: number = 100): Promise<any[]> => {
+export const getTripMessages = async (tripId: string, riderId?: string, limit: number = 100): Promise<any[]> => {
   const query = `
     SELECT
       m.message_id,
@@ -755,16 +756,18 @@ export const getTripMessages = async (tripId: string, limit: number = 100): Prom
       m.message_text,
       m.created_at,
       m.read_at,
+      m.rider_id,
       u.name as sender_name,
       u.role as sender_role
     FROM messages m
     JOIN users u ON m.sender_id = u.user_id
     WHERE m.trip_id = $1
+      AND ($2::uuid IS NULL OR m.rider_id = $2)
     ORDER BY m.created_at ASC
-    LIMIT $2
+    LIMIT $3
   `;
 
-  const result = await pool.query(query, [tripId, limit]);
+  const result = await pool.query(query, [tripId, riderId ?? null, limit]);
   return result.rows;
 };
 
@@ -773,16 +776,17 @@ export const getTripMessages = async (tripId: string, limit: number = 100): Prom
  * @param tripId Trip UUID
  * @param userId User ID (marks all messages NOT sent by this user as read)
  */
-export const markMessagesAsRead = async (tripId: string, userId: string): Promise<void> => {
+export const markMessagesAsRead = async (tripId: string, userId: string, riderId?: string): Promise<void> => {
   const query = `
     UPDATE messages
     SET read_at = current_timestamp
     WHERE trip_id = $1
       AND sender_id != $2
+      AND ($3::uuid IS NULL OR rider_id = $3)
       AND read_at IS NULL
   `;
 
-  await pool.query(query, [tripId, userId]);
+  await pool.query(query, [tripId, userId, riderId ?? null]);
 };
 
 /**

@@ -85,6 +85,7 @@ struct TripDetailView: View {
                         tripId: trip.id,
                         otherPartyName: trip.driverName,
                         isDriver: false,
+                        riderId: viewModel.booking?.riderId,
                         includesTabBarClearance: false
                     )
                 }

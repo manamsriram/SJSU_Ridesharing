@@ -709,7 +709,14 @@ export const sendMessage = async (req: AuthRequest, res: Response): Promise<void
       return;
     }
 
-    const newMessage = await tripService.sendMessage(id, req.user.userId, message.trim());
+    // Determine rider_id for channel scoping:
+    // - If caller is a rider, they ARE the rider in the channel
+    // - If caller is the driver, they must supply rider_id in the body
+    const riderId: string | undefined = isRider
+      ? req.user.userId
+      : (req.body.rider_id ?? undefined);
+
+    const newMessage = await tripService.sendMessage(id, req.user.userId, message.trim(), riderId);
 
     console.log(`💬 Message sent in trip ${id} by user ${req.user.userId}`);
 
@@ -761,7 +768,7 @@ export const sendMessage = async (req: AuthRequest, res: Response): Promise<void
             type: 'chat_message',
             title: `New message from ${senderName}`,
             message: preview,
-            data: { trip_id: id, sender_id: req.user?.userId },
+            data: { trip_id: id, sender_id: req.user?.userId, rider_id: riderId },
           })
         )
       );
@@ -814,10 +821,14 @@ export const getTripMessages = async (req: AuthRequest, res: Response): Promise<
       return;
     }
 
-    const messages = await tripService.getTripMessages(id, limit ? parseInt(limit as string) : 100);
+    const messages = await tripService.getTripMessages(
+      id,
+      req.query.rider_id as string | undefined,
+      limit ? parseInt(limit as string) : 100
+    );
 
-    // Mark messages as read for this user
-    await tripService.markMessagesAsRead(id, req.user.userId);
+    // Mark messages as read for this user (scoped to the same channel)
+    await tripService.markMessagesAsRead(id, req.user.userId, req.query.rider_id as string | undefined);
 
     successResponse(res, { messages, total: messages.length }, 'Messages retrieved successfully');
   } catch (error) {

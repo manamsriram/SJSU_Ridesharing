@@ -1349,7 +1349,7 @@ private struct BookingRow: View {
             // Chat button for active/recently-completed bookings so riders can reopen chat history
             if chatAvailable, let trip = booking.trip {
                 if showAsDriver, let rider = booking.rider {
-                    NavigationLink(destination: ChatView(tripId: trip.id, otherPartyName: rider.name, isDriver: true)) {
+                    NavigationLink(destination: ChatView(tripId: trip.id, otherPartyName: rider.name, isDriver: true, riderId: rider.id)) {
                         HStack(spacing: 8) {
                             Image(systemName: "message.fill")
                             Text("Chat with \(rider.name)")
@@ -1362,7 +1362,7 @@ private struct BookingRow: View {
                         .cornerRadius(10)
                     }
                 } else if !showAsDriver {
-                    NavigationLink(destination: ChatView(tripId: trip.id, otherPartyName: trip.driver?.name ?? "Driver", isDriver: false)) {
+                    NavigationLink(destination: ChatView(tripId: trip.id, otherPartyName: trip.driver?.name ?? "Driver", isDriver: false, riderId: booking.riderId)) {
                         HStack(spacing: 8) {
                             Image(systemName: "message.fill")
                             Text("Chat with Driver")
@@ -1895,7 +1895,7 @@ private struct BookingRideDetailView: View {
             Divider()
 
             if chatAvailable {
-                NavigationLink(destination: ChatView(tripId: trip.id, otherPartyName: booking.rider?.name ?? "Rider", isDriver: true)) {
+                NavigationLink(destination: ChatView(tripId: trip.id, otherPartyName: booking.rider?.name ?? "Rider", isDriver: true, riderId: booking.rider?.id ?? booking.riderId)) {
                     HStack(spacing: 8) {
                         Image(systemName: "message.fill")
                         Text("Chat with \(booking.rider?.name ?? "Rider")")
@@ -2219,7 +2219,7 @@ private struct BookingRideDetailView: View {
             }
 
             if !showAsDriver && chatAvailable {
-                NavigationLink(destination: ChatView(tripId: trip.id, otherPartyName: trip.driver?.name ?? "Driver", isDriver: false)) {
+                NavigationLink(destination: ChatView(tripId: trip.id, otherPartyName: trip.driver?.name ?? "Driver", isDriver: false, riderId: booking.riderId)) {
                     actionPill(title: "Chat with Driver", icon: "message.fill", fill: Color.brand.opacity(0.1), fg: .brand)
                 }
             }

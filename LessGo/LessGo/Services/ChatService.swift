@@ -10,14 +10,14 @@ class ChatService {
 
     // MARK: - Send Message
 
-    func sendMessage(tripId: String, message: String) async throws -> Message {
-        let request = SendMessageRequest(message: message)
+    func sendMessage(tripId: String, riderId: String?, message: String) async throws -> Message {
+        var body: [String: String] = ["message": message]
+        if let riderId { body["rider_id"] = riderId }
 
-        // NetworkManager.request already unwraps APIResponse<T>, so use Message directly
         let message: Message = try await network.request(
             endpoint: "/trips/\(tripId)/messages",
             method: .post,
-            body: request,
+            body: body,
             requiresAuth: true
         )
 
@@ -26,10 +26,14 @@ class ChatService {
 
     // MARK: - Get Messages
 
-    func getMessages(tripId: String) async throws -> [Message] {
-        // NetworkManager.request already unwraps APIResponse<T>, so use MessagesResponse directly
+    func getMessages(tripId: String, riderId: String?) async throws -> [Message] {
+        var endpoint = "/trips/\(tripId)/messages"
+        if let riderId {
+            endpoint += "?rider_id=\(riderId)"
+        }
+
         let response: MessagesResponse = try await network.request(
-            endpoint: "/trips/\(tripId)/messages",
+            endpoint: endpoint,
             method: .get,
             requiresAuth: true
         )

@@ -132,7 +132,8 @@ struct DriverHomeView: View {
                             .trimmingCharacters(in: .whitespacesAndNewlines)
                         notificationChatDestination = DriverNotificationChatDestination(
                             tripId: tripId,
-                            otherPartyName: senderName.isEmpty ? "Rider" : senderName
+                            otherPartyName: senderName.isEmpty ? "Rider" : senderName,
+                            riderId: item.data?.riderId
                         )
                     }
                 )
@@ -142,6 +143,7 @@ struct DriverHomeView: View {
                     tripId: destination.tripId,
                     otherPartyName: destination.otherPartyName,
                     isDriver: true,
+                    riderId: destination.riderId,
                     includesTabBarClearance: false
                 )
                 .environmentObject(authVM)

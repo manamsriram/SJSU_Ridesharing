@@ -29,6 +29,7 @@ struct NotificationPayloadData: Codable, Equatable {
     let bookingId: String?
     let status: String?
     let senderId: String?
+    let riderId: String?
     let riderName: String?
     let seatsBooked: Int?
     // Incoming ride-request fields (driver notifications)
@@ -45,6 +46,7 @@ struct NotificationPayloadData: Codable, Equatable {
         case bookingId = "booking_id"
         case status
         case senderId = "sender_id"
+        case riderId = "rider_id"
         case riderName = "rider_name"
         case seatsBooked = "seats_booked"
         case matchId = "match_id"

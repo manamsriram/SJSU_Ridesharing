@@ -138,7 +138,8 @@ struct RiderHomeView: View {
                         notificationChatDestination = NotificationChatDestination(
                             tripId: tripId,
                             otherPartyName: senderName.isEmpty ? "Driver" : senderName,
-                            isDriver: false
+                            isDriver: false,
+                            riderId: item.data?.riderId ?? authVM.currentUser?.id
                         )
                     }
                 )
@@ -148,6 +149,7 @@ struct RiderHomeView: View {
                     tripId: destination.tripId,
                     otherPartyName: destination.otherPartyName,
                     isDriver: destination.isDriver,
+                    riderId: destination.riderId,
                     includesTabBarClearance: false
                 )
                 .environmentObject(authVM)
@@ -1106,5 +1108,6 @@ private struct NotificationChatDestination: Identifiable {
     let tripId: String
     let otherPartyName: String
     let isDriver: Bool
+    var riderId: String? = nil
     var id: String { "\(tripId)-\(isDriver ? "driver" : "rider")" }
 }

@@ -7,6 +7,7 @@ struct ChatView: View {
     let tripId: String
     let otherPartyName: String
     let isDriver: Bool
+    var riderId: String? = nil
     var includesTabBarClearance: Bool = true
 
     @State private var messages: [Message] = []
@@ -286,14 +287,14 @@ struct ChatView: View {
         defer { isLoading = false }
 
         do {
-            messages = deduplicatedMessages(try await chatService.getMessages(tripId: tripId))
+            messages = deduplicatedMessages(try await chatService.getMessages(tripId: tripId, riderId: riderId))
             errorMessage = nil
         } catch {
             print("Failed to load messages (attempt 1): \(error)")
             // Notification-open path can race backend auth/session refresh briefly.
             do {
                 try await Task.sleep(nanoseconds: 350_000_000)
-                messages = deduplicatedMessages(try await chatService.getMessages(tripId: tripId))
+                messages = deduplicatedMessages(try await chatService.getMessages(tripId: tripId, riderId: riderId))
                 errorMessage = nil
             } catch {
                 print("Failed to load messages (attempt 2): \(error)")
@@ -312,7 +313,7 @@ struct ChatView: View {
         showQuickMessages = false
 
         do {
-            let newMessage = try await chatService.sendMessage(tripId: tripId, message: textToSend)
+            let newMessage = try await chatService.sendMessage(tripId: tripId, riderId: riderId, message: textToSend)
             messages = deduplicatedMessages(messages + [newMessage])
             UINotificationFeedbackGenerator().notificationOccurred(.success)
         } catch {
@@ -330,7 +331,7 @@ struct ChatView: View {
         pollTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { _ in
             Task {
                 do {
-                    let newMessages = try await chatService.getMessages(tripId: tripId)
+                    let newMessages = try await chatService.getMessages(tripId: tripId, riderId: riderId)
                     let normalized = deduplicatedMessages(newMessages)
                     await MainActor.run {
                         let oldIds = messages.map(\.id)

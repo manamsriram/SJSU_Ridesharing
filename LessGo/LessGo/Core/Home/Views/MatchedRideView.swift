@@ -181,6 +181,7 @@ struct MatchedRideView: View {
                 tripId: matchedTripId,
                 otherPartyName: driverName,
                 isDriver: false,
+                riderId: authVM.currentUser?.id,
                 includesTabBarClearance: false
             )
             .environmentObject(authVM)

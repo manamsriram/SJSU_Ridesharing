@@ -5,5 +5,6 @@ import SwiftUI
 struct DriverNotificationChatDestination: Identifiable {
     let tripId: String
     let otherPartyName: String
-    var id: String { tripId }
+    var riderId: String? = nil
+    var id: String { tripId + (riderId ?? "") }
 }
