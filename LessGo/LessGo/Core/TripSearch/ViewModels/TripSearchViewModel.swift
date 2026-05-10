@@ -193,8 +193,8 @@ class TripSearchViewModel: ObservableObject {
 
     var filteredTrips: [Trip] {
         let visibleTrips = trips.filter { trip in
-            guard let currentUserId else { return true }
-            return trip.driverId != currentUserId
+            guard let currentUserId else { return trip.seatsAvailable > 0 }
+            return trip.driverId != currentUserId && trip.seatsAvailable > 0
         }
 
         // First apply direction filter (client-side, since backend only supports origin search)

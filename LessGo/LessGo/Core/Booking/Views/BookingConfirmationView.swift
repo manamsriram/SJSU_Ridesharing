@@ -1307,9 +1307,9 @@ private struct BookingRow: View {
                             }
                             if let plate = driver.licensePlate {
                                 HStack(spacing: 4) {
-                                    Image(systemName: "creditcard.fill")
+                                    Image(systemName: "car.fill")
                                         .font(.system(size: 9))
-                                    Text("License: \(plate)")
+                                    Text("Plate: \(plate.uppercased())")
                                         .font(.system(size: 11, weight: .medium))
                                 }
                                 .foregroundColor(.textTertiary)
