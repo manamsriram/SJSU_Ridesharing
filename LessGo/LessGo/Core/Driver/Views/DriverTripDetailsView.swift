@@ -25,13 +25,14 @@ struct DriverTripDetailsView: View {
     @State private var showActiveTripView = false
 
     @State private var ratingTarget: BookingWithRider? = nil
+    @State private var ratedBookingIds: Set<String> = []
     @State private var driverSelectedStars = 5
     @State private var driverRatingComment = ""
     @State private var isSubmittingDriverRating = false
     @State private var showSimulationView = false
 
     private func hasRatedPassenger(_ bookingId: String) -> Bool {
-        UserDefaults.standard.bool(forKey: "driver_rated_\(bookingId)")
+        ratedBookingIds.contains(bookingId) || UserDefaults.standard.bool(forKey: "driver_rated_\(bookingId)")
     }
 
     private var activePassengers: [BookingWithRider] {
@@ -446,39 +447,20 @@ struct DriverTripDetailsView: View {
                         }
                     }
 
-                    if !approvedBookings.isEmpty {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("Confirmed Passengers")
-                                .font(.system(size: 13, weight: .semibold))
-                                .foregroundColor(.brandGreen)
-                                .padding(.horizontal, 2)
-                            ForEach(approvedBookings) { passenger in
-                                PassengerCard(passenger: passenger, onChat: { openChat(with: passenger) })
-                            }
-                        }
+                    let confirmedPassengers = passengers.filter {
+                        $0.bookingState == .approved || $0.bookingState == .completed
                     }
-
-                    let archivedBookings = passengers.filter {
-                        $0.bookingState == .completed || $0.bookingState == .cancelled
-                    }
-                    if !archivedBookings.isEmpty {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("Past Requests")
-                                .font(.system(size: 13, weight: .semibold))
-                                .foregroundColor(.textSecondary)
-                                .padding(.horizontal, 2)
-                            ForEach(archivedBookings) { booking in
-                                PassengerCard(
-                                    passenger: booking,
-                                    onChat: { openChat(with: booking) },
-                                    onRate: booking.bookingState == .completed && !hasRatedPassenger(booking.id) ? {
-                                        driverSelectedStars = 5
-                                        driverRatingComment = ""
-                                        ratingTarget = booking
-                                    } : nil
-                                )
-                            }
-                        }
+                    ForEach(confirmedPassengers) { passenger in
+                        PassengerCard(
+                            passenger: passenger,
+                            onChat: { openChat(with: passenger) },
+                            onRate: passenger.bookingState == .completed && !hasRatedPassenger(passenger.id) ? {
+                                driverSelectedStars = 5
+                                driverRatingComment = ""
+                                ratingTarget = passenger
+                            } : nil,
+                            isRated: passenger.bookingState == .completed && hasRatedPassenger(passenger.id)
+                        )
                     }
                 }
             }
@@ -547,6 +529,7 @@ struct DriverTripDetailsView: View {
                                     comment: comment.isEmpty ? nil : comment
                                 )
                                 UserDefaults.standard.set(true, forKey: "driver_rated_\(target.id)")
+                                ratedBookingIds.insert(target.id)
                                 ratingTarget = nil
                                 await authVM.refreshUser()
                             } catch {
