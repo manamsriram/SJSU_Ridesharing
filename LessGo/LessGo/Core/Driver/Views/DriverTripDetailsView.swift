@@ -468,7 +468,15 @@ struct DriverTripDetailsView: View {
                                 .foregroundColor(.textSecondary)
                                 .padding(.horizontal, 2)
                             ForEach(archivedBookings) { booking in
-                                archivedTripRow(booking)
+                                PassengerCard(
+                                    passenger: booking,
+                                    onChat: { openChat(with: booking) },
+                                    onRate: booking.bookingState == .completed && !hasRatedPassenger(booking.id) ? {
+                                        driverSelectedStars = 5
+                                        driverRatingComment = ""
+                                        ratingTarget = booking
+                                    } : nil
+                                )
                             }
                         }
                     }
@@ -482,64 +490,6 @@ struct DriverTripDetailsView: View {
         formatter.dateStyle = .medium
         formatter.timeStyle = .short
         return formatter.string(from: date)
-    }
-
-    private func archivedTripRow(_ booking: BookingWithRider) -> some View {
-        let stateLabel: String = {
-            switch booking.bookingState {
-            case .completed: return "Completed"
-            case .cancelled: return "Cancelled"
-            case .rejected:  return "Declined"
-            default:         return booking.bookingState.displayName
-            }
-        }()
-        let stateColor: Color = booking.bookingState == .completed ? .brandGreen : .textSecondary
-
-        return HStack(spacing: 12) {
-            Circle()
-                .fill(Color.gray.opacity(0.2))
-                .frame(width: 36, height: 36)
-                .overlay(
-                    Text(String(booking.riderName.prefix(1)))
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundColor(.textSecondary)
-                )
-            VStack(alignment: .leading, spacing: 2) {
-                Text(booking.riderName)
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundColor(.textPrimary)
-                Text(stateLabel)
-                    .font(.system(size: 12))
-                    .foregroundColor(stateColor)
-            }
-            Spacer()
-            HStack(spacing: 12) {
-                if booking.bookingState == .completed && !hasRatedPassenger(booking.id) {
-                    Button {
-                        driverSelectedStars = 5
-                        driverRatingComment = ""
-                        ratingTarget = booking
-                    } label: {
-                        Image(systemName: "star.fill")
-                            .font(.system(size: 14))
-                            .foregroundColor(.brandOrange)
-                    }
-                }
-                Button {
-                    Task {
-                        try? await BookingService.shared.deleteBooking(bookingId: booking.id)
-                        passengers.removeAll { $0.id == booking.id }
-                    }
-                } label: {
-                    Image(systemName: "trash")
-                        .font(.system(size: 14))
-                        .foregroundColor(.red)
-                }
-            }
-        }
-        .padding(12)
-        .background(Color(.systemGray6))
-        .cornerRadius(12)
     }
 
     @ViewBuilder

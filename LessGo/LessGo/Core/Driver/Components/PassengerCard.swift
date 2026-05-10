@@ -14,7 +14,8 @@ private func formatPassengerDeadline(_ date: Date) -> String {
 struct PassengerCard: View {
     let passenger: BookingWithRider
     var onChat: (() -> Void)? = nil
-    private var hasActions: Bool { (passenger.riderPhone?.isEmpty == false) || passenger.pickupLocation != nil || onChat != nil }
+    var onRate: (() -> Void)? = nil
+    private var hasActions: Bool { (passenger.riderPhone?.isEmpty == false) || passenger.pickupLocation != nil || onChat != nil || onRate != nil }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -140,6 +141,14 @@ struct PassengerCard: View {
                 .padding(.vertical, 7)
                 .background(DesignSystem.Colors.sjsuGold)
                 .clipShape(Capsule())
+
+                if let onRate = onRate {
+                    Button(action: onRate) {
+                        Image(systemName: "star.fill")
+                            .font(.system(size: 14))
+                            .foregroundColor(.brandOrange)
+                    }
+                }
             }
             .padding(14)
             .background(
