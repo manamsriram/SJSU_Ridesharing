@@ -30,7 +30,7 @@ class BookingViewModel: ObservableObject {
     // MARK: - Load Bookings
 
     func loadBookings(asDriver: Bool = false) async {
-        isLoading = true
+        isLoading = bookings.isEmpty
         errorMessage = nil
         errorKind = nil
         defer { isLoading = false }
@@ -55,7 +55,7 @@ class BookingViewModel: ObservableObject {
     }
 
     func loadPostedTrips(driverId: String) async {
-        isLoading = true
+        isLoading = postedTrips.isEmpty
         defer { isLoading = false }
         do {
             let response = try await TripService.shared.listTrips(driverId: driverId, limit: 50)
