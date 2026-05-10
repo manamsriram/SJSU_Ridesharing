@@ -1,6 +1,4 @@
 import { Pool } from 'pg';
-import { Pool } from 'pg';
-import Stripe from 'stripe';
 import axios from 'axios';
 import { config } from '../config';
 import { Trip, TripWithDriver, CreateTripRequest, TripStatus, GeoPoint, AppError } from '@lessgo/shared';
@@ -13,8 +11,6 @@ import {
   TripRequestRow,
   CandidateTrip,
 } from './matching.service';
-
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '', { apiVersion: '2024-04-10' as any });
 
 /** Returns true if the departure is within 1 hour from now (the lock window). */
 const isWithinOneHour = (departureTime: Date): boolean =>
@@ -585,10 +581,9 @@ export const cancelTrip = async (tripId: string, driverId: string): Promise<Trip
   const bookingsResult = await pool.query<{
     booking_id: string;
     rider_id: string;
-    payment_intent_id: string | null;
     seats_booked: number;
   }>(
-    `SELECT booking_id, rider_id, payment_intent_id, seats_booked
+    `SELECT booking_id, rider_id, seats_booked
      FROM bookings
      WHERE trip_id = $1
        AND booking_state NOT IN ('cancelled', 'rejected', 'completed')
@@ -596,14 +591,9 @@ export const cancelTrip = async (tripId: string, driverId: string): Promise<Trip
     [tripId]
   );
 
-  // Release Stripe holds for paid riders (fire-and-forget per booking)
-  for (const b of bookingsResult.rows) {
-    if (b.payment_intent_id) {
-      stripe.paymentIntents.cancel(b.payment_intent_id).catch((err: any) =>
-        console.warn(`[cancelTrip] Stripe cancel failed for ${b.payment_intent_id}:`, err.message)
-      );
-    }
-  }
+  // Release Stripe holds via payment-service (fire-and-forget)
+  axios.post(`${config.paymentServiceUrl}/payments/trip/${tripId}/cancel-intents`)
+    .catch((err: any) => console.warn(`[cancelTrip] payment-service cancel-intents failed:`, err.message));
 
   // Bulk-cancel all active bookings
   if (bookingsResult.rows.length > 0) {
@@ -623,7 +613,7 @@ export const cancelTrip = async (tripId: string, driverId: string): Promise<Trip
         user_id: b.rider_id,
         type: 'trip_cancelled_by_driver',
         title: 'Trip Cancelled',
-        message: `Your driver cancelled the trip from ${trip.origin} to ${trip.destination}.${b.payment_intent_id ? ' Your payment hold has been released.' : ''}`,
+        message: `Your driver cancelled the trip from ${trip.origin} to ${trip.destination}. Any payment hold has been released.`,
         data: { trip_id: tripId },
       }).catch(() => {});
     }

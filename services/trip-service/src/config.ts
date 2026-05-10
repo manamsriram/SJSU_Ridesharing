@@ -24,6 +24,7 @@ export const config = {
   bookingServiceUrl: process.env.BOOKING_SERVICE_URL || 'http://127.0.0.1:3004',
   userServiceUrl: process.env.USER_SERVICE_URL || 'http://127.0.0.1:3002',
   notificationServiceUrl: process.env.NOTIFICATION_SERVICE_URL || 'http://127.0.0.1:3006',
+  paymentServiceUrl: process.env.PAYMENT_SERVICE_URL || 'http://127.0.0.1:3005',
   embeddingServiceUrl: process.env.EMBEDDING_SERVICE_URL || 'http://127.0.0.1:3010',
   costServiceUrl: process.env.COST_SERVICE_URL || 'http://127.0.0.1:3009',
   routingServiceUrl: process.env.ROUTING_SERVICE_URL || 'http://127.0.0.1:8002',

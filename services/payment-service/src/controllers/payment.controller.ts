@@ -118,3 +118,15 @@ export const getByBooking = async (req: Request, res: Response): Promise<void> =
     throw new AppError('Failed to get payment', 500);
   }
 };
+
+export const cancelByTrip = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { tripId } = req.params;
+    const result = await paymentService.cancelPaymentIntentsByTripId(tripId);
+    successResponse(res, result, 'Payment intents cancelled');
+  } catch (error) {
+    console.error('Cancel by trip error:', error);
+    const status = getErrorStatus(error);
+    errorResponse(res, getErrorMessage(error), status);
+  }
+};
