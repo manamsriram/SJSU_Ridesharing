@@ -217,14 +217,20 @@ class BookingViewModel: ObservableObject {
     func cancelBooking(id: String) async -> Bool {
         errorMessage = nil
         do {
-            let booking = try await bookingService.cancelBooking(id: id)
-            // Update in list
+            let updated = try await bookingService.cancelBooking(id: id)
+            // Merge updated state into existing entry to preserve nested trip/rider/quote objects
             if let index = bookings.firstIndex(where: { $0.id == id }) {
-                bookings[index] = booking
+                bookings[index] = bookings[index].merging(updated)
             }
             UINotificationFeedbackGenerator().notificationOccurred(.success)
             return true
         } catch let error as NetworkError {
+            // If server says already cancelled, sync local state to cancelled
+            if case .serverError(let apiError) = error, apiError.message == "Booking already cancelled",
+               let index = bookings.firstIndex(where: { $0.id == id }) {
+                bookings[index] = bookings[index].asCancelled()
+                return true
+            }
             #if DEBUG
             print("[BookingViewModel] Failed to cancel booking: \(error)")
             #endif
@@ -250,7 +256,7 @@ class BookingViewModel: ObservableObject {
             let booking = try await bookingService.approveBooking(id: id)
             // Update in list
             if let index = bookings.firstIndex(where: { $0.id == id }) {
-                bookings[index] = booking
+                bookings[index] = bookings[index].merging(booking)
             }
             UINotificationFeedbackGenerator().notificationOccurred(.success)
             return true
@@ -280,7 +286,7 @@ class BookingViewModel: ObservableObject {
             let booking = try await bookingService.rejectBooking(id: id)
             // Update in list
             if let index = bookings.firstIndex(where: { $0.id == id }) {
-                bookings[index] = booking
+                bookings[index] = bookings[index].merging(booking)
             }
             UINotificationFeedbackGenerator().notificationOccurred(.success)
             return true

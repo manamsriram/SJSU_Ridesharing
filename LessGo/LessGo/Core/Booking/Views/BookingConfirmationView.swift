@@ -1176,7 +1176,7 @@ private struct BookingRow: View {
     private var chatAvailable: Bool {
         let activeStates = liveBooking.bookingState == .pending
             || liveBooking.bookingState == .approved
-            || liveBooking.status == .confirmed
+            || (liveBooking.status == .confirmed && liveBooking.bookingState != .cancelled)
         let recentlyCompleted = liveBooking.bookingState == .completed
             && liveBooking.updatedAt > Date().addingTimeInterval(-86400)
         return activeStates || recentlyCompleted
@@ -1334,7 +1334,7 @@ private struct BookingRow: View {
             }
 
             // Track / simulate ride entry (confirmed bookings)
-            if liveBooking.status == .confirmed, let trip = liveBooking.trip {
+            if liveBooking.status == .confirmed, liveBooking.bookingState != .cancelled, let trip = liveBooking.trip {
                 NavigationLink(destination: ActiveTripView(trip: trip, booking: liveBooking, isDriver: showAsDriver)) {
                     HStack(spacing: 8) {
                         Image(systemName: [.enRoute, .arrived, .inProgress].contains(trip.status) ? "location.fill" : "sparkles")

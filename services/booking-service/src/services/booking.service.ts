@@ -548,7 +548,17 @@ export const cancelBooking = async (
       throw new Error('Unauthorized');
     }
 
-    if (bookingData.status === BookingStatus.Cancelled) {
+    if (bookingData.status === BookingStatus.Cancelled || bookingData.booking_state === 'cancelled') {
+      // Heal any status/booking_state mismatch before throwing
+      if (bookingData.status !== BookingStatus.Cancelled || bookingData.booking_state !== 'cancelled') {
+        await client.query(
+          `UPDATE bookings SET status = 'cancelled', booking_state = 'cancelled', updated_at = current_timestamp WHERE booking_id = $1`,
+          [bookingId]
+        );
+        await client.query('COMMIT');
+        const healed = await getBookingById(bookingId);
+        return healed!;
+      }
       throw new Error('Booking already cancelled');
     }
 
