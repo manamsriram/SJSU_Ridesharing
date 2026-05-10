@@ -373,6 +373,7 @@ struct DriverHomeView: View {
     private func refreshDashboardData() async {
         guard let id = authVM.currentUser?.id else { return }
         await profileVM.loadDriverTrips(driverId: id)
+        await profileVM.loadEarnings(userId: id)
         await refreshNotificationBadge()
 
         // Once the driver has completed any trip, permanently dismiss the onboarding section.
@@ -499,7 +500,7 @@ struct DriverHomeView: View {
                            label: "Rating", color: .brandOrange)
             Divider().frame(height: 44)
             DriverStatCard(icon: "person.2.fill",
-                           value: "\(activeDriverTrips.count)",
+                           value: "\(profileVM.earnings?.tripsActive ?? 0)",
                            label: "Active Trips", color: .brand)
             Divider().frame(height: 44)
             DriverStatCard(icon: "car.fill",

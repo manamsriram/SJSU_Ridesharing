@@ -275,6 +275,53 @@ export const getBookingById = async (bookingId: string): Promise<BookingWithDeta
     }
   }
 
+  // Lazy expiry: approved booking whose payment deadline passed without payment
+  if (
+    row.booking_state === 'approved' &&
+    !row.payment_intent_id &&
+    row.payment_deadline_at &&
+    new Date(row.payment_deadline_at) < new Date()
+  ) {
+    const expireClient = await pool.connect();
+    try {
+      await expireClient.query('BEGIN');
+      const expireResult = await expireClient.query(
+        `UPDATE bookings
+         SET booking_state = 'cancelled',
+             cancellation_reason = 'payment_not_completed',
+             updated_at = current_timestamp
+         WHERE booking_id = $1 AND booking_state = 'approved' AND payment_intent_id IS NULL
+         RETURNING booking_state`,
+        [bookingId]
+      );
+      if (expireResult.rowCount && expireResult.rowCount > 0) {
+        await expireClient.query(
+          `UPDATE trips
+           SET seats_available = seats_available + $1, updated_at = current_timestamp
+           WHERE trip_id = $2`,
+          [row.seats_booked, row.trip_id]
+        );
+        row = { ...row, booking_state: 'cancelled', cancellation_reason: 'payment_not_completed' };
+
+        axios.post(`${config.notificationServiceUrl}/notifications/send`, {
+          user_id: row.rider_id,
+          type: 'booking_payment_expired',
+          title: 'Booking Cancelled',
+          message: 'Your booking was cancelled because payment was not completed before the deadline.',
+          data: { booking_id: bookingId },
+        }).catch((notifErr: unknown) => {
+          console.warn(`[LAZY_PAYMENT_EXPIRY] Failed to send notification for booking ${bookingId}:`, notifErr);
+        });
+      }
+      await expireClient.query('COMMIT');
+    } catch (expireErr) {
+      await expireClient.query('ROLLBACK');
+      console.error(`[LAZY_PAYMENT_EXPIRY] Failed to expire booking ${bookingId}:`, expireErr);
+    } finally {
+      expireClient.release();
+    }
+  }
+
   return {
     booking_id: row.booking_id,
     trip_id: row.trip_id,

@@ -504,6 +504,7 @@ struct BookingListView: View {
     @State private var reportedUserName: String?
     @State private var reportTripId: String?
     @State private var deepLinkedBooking: Booking? = nil
+    @State private var refreshTimer: Timer? = nil
 
     private var filteredBookings: [Booking] {
         let cutoff = Date().addingTimeInterval(-24 * 3600)
@@ -604,6 +605,13 @@ struct BookingListView: View {
                     }
                     await refreshCurrentTab()
                 }
+                refreshTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { _ in
+                    Task { await refreshCurrentTab() }
+                }
+            }
+            .onDisappear {
+                refreshTimer?.invalidate()
+                refreshTimer = nil
             }
             .onChange(of: showAsDriver) { _ in
                 Task { await refreshCurrentTab() }
@@ -1179,11 +1187,19 @@ private struct BookingRow: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
                 // Status
-                HStack(spacing: 5) {
-                    Circle().fill(statusColor).frame(width: 10, height: 10)
-                    Text(booking.bookingState.displayName)
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundColor(statusColor)
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 5) {
+                        Circle().fill(statusColor).frame(width: 10, height: 10)
+                        Text(booking.bookingState.displayName)
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundColor(statusColor)
+                    }
+                    if booking.bookingState == .cancelled,
+                       booking.cancellationReason == "payment_not_completed" {
+                        Text("Payment not made in time")
+                            .font(.system(size: 11))
+                            .foregroundColor(.textTertiary)
+                    }
                 }
                 Spacer()
                 Text(booking.createdAt.timeAgo)
