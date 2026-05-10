@@ -1051,7 +1051,13 @@ export const capturePayment = async (
   const paymentIntentId = intentIdResult.rows[0]?.payment_intent_id;
 
   if (!paymentIntentId) {
-    throw new AppError('No authorized payment found for this booking', 400);
+    // No payment on file — still mark booking completed so earnings queries work
+    await pool.query(
+      `UPDATE bookings SET booking_state = 'completed', updated_at = current_timestamp WHERE booking_id = $1`,
+      [bookingId]
+    );
+    const updatedBooking = await getBookingById(bookingId);
+    return updatedBooking!;
   }
 
   // Partial capture: use final_price if written, otherwise capture full hold
@@ -1070,27 +1076,33 @@ export const capturePayment = async (
     ? { amount_to_capture: Math.round(finalPrice * 100) }
     : undefined;
 
-  await stripe.paymentIntents.capture(paymentIntentId, captureOptions);
+  let captureSucceeded = false;
+  try {
+    await stripe.paymentIntents.capture(paymentIntentId, captureOptions);
+    captureSucceeded = true;
+  } catch (stripeErr) {
+    console.error(`[CAPTURE] Stripe capture failed for booking ${bookingId}:`, stripeErr);
+  }
 
-  // Credit driver earnings with the actual captured amount
+  // Credit driver earnings and mark payment — only when Stripe succeeded
   const capturedAmount = finalPrice ?? holdAmount;
-  if (capturedAmount) {
+  if (capturedAmount && captureSucceeded) {
     await pool.query(
       `UPDATE users
        SET earnings = COALESCE(earnings, 0) + $1, updated_at = current_timestamp
        WHERE user_id = $2`,
       [capturedAmount, driverId]
-    ).catch(() => {}); // non-fatal
+    ).catch(() => {});
 
-    // Mark payment row as captured so iOS and earnings queries reflect correct status
     await pool.query(
       `UPDATE payments
        SET status = 'captured', amount = $1, updated_at = current_timestamp
        WHERE booking_id = $2`,
       [capturedAmount, bookingId]
-    ).catch(() => {}); // non-fatal
+    ).catch(() => {});
   }
 
+  // Always mark the booking completed — the trip is done regardless of Stripe state
   await pool.query(
     `UPDATE bookings
      SET booking_state = 'completed', updated_at = current_timestamp

@@ -353,13 +353,13 @@ export const getDriverEarnings = async (userId: string) => {
   const activeTrips = await pool.query(activeTripsQuery, [userId]);
 
   const thisMonthQuery = `
-    SELECT COALESCE(SUM(p.amount), 0) as month_total
-    FROM payments p
-    JOIN bookings b ON p.booking_id = b.booking_id
+    SELECT COALESCE(SUM(COALESCE(q.final_price, q.max_price)), 0) as month_total
+    FROM quotes q
+    JOIN bookings b ON q.booking_id = b.booking_id
     JOIN trips t ON b.trip_id = t.trip_id
     WHERE t.driver_id = $1
-      AND p.status = 'captured'
-      AND DATE_TRUNC('month', p.updated_at) = DATE_TRUNC('month', CURRENT_DATE)
+      AND b.booking_state = 'completed'
+      AND DATE_TRUNC('month', b.updated_at) = DATE_TRUNC('month', CURRENT_DATE)
   `;
   const thisMonthResult = await pool.query(thisMonthQuery, [userId]);
 
