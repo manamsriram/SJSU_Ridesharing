@@ -288,11 +288,9 @@ struct RouteMapView: UIViewRepresentable {
                 .distance(from: CLLocation(latitude: origin.latitude, longitude: origin.longitude))
             let requestAge = Date().timeIntervalSince(lastAt)
 
-            // Recompute if destination changed materially, otherwise allow small driver moves without rerouting every tick.
+            // Only reroute if the destination changed materially. Driver moving along a fixed route doesn't need a new request.
             if destinationDelta > 25 { return false }
-            if originDelta < 60 && requestAge < 2.5 { return true }
-            if requestAge < 1.2 { return true }
-            return false
+            return true
         }
 
         func fitVisibleRegionIfNeeded(_ mapView: MKMapView, coordinates: [CLLocationCoordinate2D]) {
