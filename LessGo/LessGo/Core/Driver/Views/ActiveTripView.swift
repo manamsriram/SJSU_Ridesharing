@@ -956,18 +956,38 @@ struct ActiveTripView: View {
         }
     }
 
+    /// Returns true if the coordinate is within ~0.5 miles of SJSU campus.
+    private func isNearSJSU(_ coord: CLLocationCoordinate2D) -> Bool {
+        let sjsu = AppConstants.sjsuCoordinate
+        let sjsuLocation = CLLocation(latitude: sjsu.latitude, longitude: sjsu.longitude)
+        let coordLocation = CLLocation(latitude: coord.latitude, longitude: coord.longitude)
+        return sjsuLocation.distance(from: coordLocation) < 804 // ~0.5 miles in meters
+    }
+
     private func simulateFullRideAsDriver() async {
-        let start = driverCoordinate ?? trip.originPoint?.clLocationCoordinate2D ?? AppConstants.sjsuCoordinate
-        let pickup = focusedPickupCoordinate ?? trip.originPoint?.clLocationCoordinate2D ?? start
-        let dropoff = trip.destinationPoint?.clLocationCoordinate2D ?? pickup
+        // Only use trip.originPoint as start fallback if it's not SJSU itself —
+        // SJSU is the common destination, not a valid driver home origin.
+        let originFallback: CLLocationCoordinate2D? = {
+            guard let coord = trip.originPoint?.clLocationCoordinate2D else { return nil }
+            return isNearSJSU(coord) ? nil : coord
+        }()
+        // Resolve coordinates: prefer live location and real rider pickup data.
+        // Fall back to originFallback (driver home) only when no live data is available.
+        // Never use SJSU as the simulation start point.
+        let resolvedStart = locationService.currentLocation?.coordinate
+            ?? driverCoordinate
+            ?? originFallback
+            ?? AppConstants.sjsuCoordinate
+        let resolvedPickup = focusedPickupCoordinate ?? originFallback ?? resolvedStart
+        let resolvedDropoff = trip.destinationPoint?.clLocationCoordinate2D ?? resolvedPickup
 
         await MainActor.run {
             withAnimation { tripStatus = .enRoute }
             showPostRideSummary = false
         }
         locationService.startSimulatedMovement(
-            from: locationService.currentLocation?.coordinate ?? start,
-            to: pickup,
+            from: resolvedStart,
+            to: resolvedPickup,
             tripId: trip.id,
             sendToBackend: false,
             updateDriverFeedOnly: false,
@@ -985,8 +1005,8 @@ struct ActiveTripView: View {
             withAnimation { tripStatus = .inProgress }
         }
         locationService.startSimulatedMovement(
-            from: locationService.currentLocation?.coordinate ?? pickup,
-            to: dropoff,
+            from: locationService.currentLocation?.coordinate ?? resolvedPickup,
+            to: resolvedDropoff,
             tripId: trip.id,
             sendToBackend: false,
             updateDriverFeedOnly: false,
