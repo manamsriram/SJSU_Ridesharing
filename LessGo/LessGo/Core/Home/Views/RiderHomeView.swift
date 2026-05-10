@@ -19,11 +19,11 @@ struct RiderHomeView: View {
     @StateObject private var locationManager = LocationManager.shared
 
     @State private var region = MKCoordinateRegion(
-        center: AppConstants.sjsuCoordinate,
-        span: MKCoordinateSpan(latitudeDelta: 0.05, longitudeDelta: 0.05)
+        center: LocationManager.shared.currentLocation?.coordinate ?? AppConstants.sjsuCoordinate,
+        span: MKCoordinateSpan(latitudeDelta: 0.015, longitudeDelta: 0.015)
     )
     @State private var trackingMode: MapUserTrackingMode = .follow
-    @State private var hasInitiallyCentered = false
+    @State private var hasInitiallyCentered = LocationManager.shared.currentLocation != nil
     @State private var showAccountMenu = false
     @State private var showNotifications = false
     @State private var showFinding = false
