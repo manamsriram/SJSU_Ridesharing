@@ -200,7 +200,7 @@ export const getBookingById = async (bookingId: string): Promise<BookingWithDeta
       r.user_id as rider_user_id, r.name as rider_name, r.email as rider_email,
       r.role as rider_role, r.sjsu_id_status as rider_sjsu_id_status, r.rating as rider_rating,
       r.created_at as rider_created_at, r.updated_at as rider_updated_at,
-      q.quote_id, q.max_price, q.max_price AS fare, q.final_price, q.created_at as quote_created_at,
+      q.quote_id, q.max_price, COALESCE(q.final_price, q.max_price) AS fare, q.final_price, q.created_at as quote_created_at,
       p.payment_id, p.stripe_payment_intent_id, p.amount, p.status as payment_status,
       p.created_at as payment_created_at, p.updated_at as payment_updated_at
     FROM bookings b
@@ -674,7 +674,7 @@ export const getBookingsByTripId = async (tripId: string): Promise<{ bookings: a
       b.payment_intent_id,
       b.payment_deadline_at,
       b.cancellation_reason,
-      q.max_price AS fare
+      COALESCE(q.final_price, q.max_price) AS fare
     FROM bookings b
     JOIN users u ON b.rider_id = u.user_id
     LEFT JOIN quotes q ON q.booking_id = b.booking_id

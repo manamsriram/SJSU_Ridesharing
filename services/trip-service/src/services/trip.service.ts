@@ -174,6 +174,13 @@ export const getTripById = async (tripId: string): Promise<TripWithDriver | null
       ST_Y(t.destination_point::geometry) as destination_lat,
       t.departure_time, t.seats_available, t.recurrence, t.status,
       t.created_at, t.updated_at,
+      COALESCE((
+        SELECT SUM(COALESCE(q.final_price, q.max_price))
+        FROM quotes q
+        JOIN bookings b ON q.booking_id = b.booking_id
+        WHERE b.trip_id = t.trip_id
+          AND b.booking_state = 'completed'
+      ), 0) AS total_payout,
       u.user_id as driver_user_id,
       u.name as driver_name,
       u.email as driver_email,
@@ -209,6 +216,7 @@ export const getTripById = async (tripId: string): Promise<TripWithDriver | null
     seats_available: row.seats_available,
     recurrence: row.recurrence,
     status: row.status,
+    total_payout: parseFloat(row.total_payout || '0'),
     created_at: row.created_at,
     updated_at: row.updated_at,
     driver: {
@@ -379,10 +387,11 @@ export const listTrips = async (filters?: {
       t.created_at, t.updated_at,
       (SELECT COUNT(*) FROM bookings b WHERE b.trip_id = t.trip_id AND b.booking_state = 'pending') AS pending_booking_count,
       COALESCE((
-        SELECT SUM(p.amount)
-        FROM payments p
-        JOIN bookings b ON p.booking_id = b.booking_id
-        WHERE b.trip_id = t.trip_id AND p.status = 'captured'
+        SELECT SUM(COALESCE(q.final_price, q.max_price))
+        FROM quotes q
+        JOIN bookings b ON q.booking_id = b.booking_id
+        WHERE b.trip_id = t.trip_id
+          AND b.booking_state = 'completed'
       ), 0) AS total_payout,
       COALESCE((
         SELECT SUM(q.max_price)

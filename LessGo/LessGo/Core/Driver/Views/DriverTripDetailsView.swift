@@ -45,7 +45,7 @@ struct DriverTripDetailsView: View {
         }
         // While active, sum fares from approved/completed/pending passengers
         return passengers
-            .filter { [.approved, .pending, .completed].contains($0.bookingState) }
+            .filter { [.approved, .completed].contains($0.bookingState) }
             .compactMap { $0.fare }
             .reduce(0, +)
     }
