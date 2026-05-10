@@ -35,7 +35,10 @@ struct DriverTripDetailsView: View {
     }
 
     private var totalSeatsBooked: Int {
-        passengers.reduce(0) { $0 + $1.seatsBooked }
+        // Only count seats from approved/completed passengers (same filter as earnings)
+        passengers
+            .filter { [.approved, .completed].contains($0.bookingState) }
+            .reduce(0) { $0 + $1.seatsBooked }
     }
 
     private var totalEarnings: Double {
@@ -329,7 +332,7 @@ struct DriverTripDetailsView: View {
             detailRow(
                 icon: "person.2.fill",
                 iconColor: .brand,
-                title: "Passengers",
+                title: "Active Passengers",
                 value: "\(totalSeatsBooked) booked / \(trip.seatsAvailable) seats"
             )
             Divider()
