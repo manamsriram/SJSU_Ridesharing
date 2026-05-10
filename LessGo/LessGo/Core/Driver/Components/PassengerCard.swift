@@ -15,8 +15,8 @@ struct PassengerCard: View {
     let passenger: BookingWithRider
     var onChat: (() -> Void)? = nil
     var onRate: (() -> Void)? = nil
-    var isRated: Bool = false
-    private var hasActions: Bool { (passenger.riderPhone?.isEmpty == false) || passenger.pickupLocation != nil || onChat != nil || onRate != nil || isRated }
+    var rating: Int? = nil
+    private var hasActions: Bool { (passenger.riderPhone?.isEmpty == false) || passenger.pickupLocation != nil || onChat != nil || onRate != nil || rating != nil }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -143,14 +143,14 @@ struct PassengerCard: View {
                 .background(DesignSystem.Colors.sjsuGold)
                 .clipShape(Capsule())
 
-                if isRated {
-                    HStack(spacing: 4) {
-                        Image(systemName: "checkmark.circle.fill")
-                            .font(.system(size: 12))
-                        Text("Rated")
-                            .font(.system(size: 12, weight: .medium))
+                if let score = rating {
+                    HStack(spacing: 2) {
+                        ForEach(1...5, id: \.self) { i in
+                            Image(systemName: i <= score ? "star.fill" : "star")
+                                .font(.system(size: 11))
+                        }
                     }
-                    .foregroundColor(.brandGreen)
+                    .foregroundColor(.brandOrange)
                 } else if let onRate = onRate {
                     Button(action: onRate) {
                         Image(systemName: "star.fill")

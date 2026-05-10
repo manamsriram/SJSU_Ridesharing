@@ -31,8 +31,12 @@ struct DriverTripDetailsView: View {
     @State private var isSubmittingDriverRating = false
     @State private var showSimulationView = false
 
-    private func hasRatedPassenger(_ bookingId: String) -> Bool {
-        ratedBookingIds.contains(bookingId) || UserDefaults.standard.bool(forKey: "driver_rated_\(bookingId)")
+    private func ratingForPassenger(_ bookingId: String) -> Int? {
+        if ratedBookingIds.contains(bookingId) || UserDefaults.standard.bool(forKey: "driver_rated_\(bookingId)") {
+            let score = UserDefaults.standard.integer(forKey: "driver_rating_score_\(bookingId)")
+            return score > 0 ? score : 5
+        }
+        return nil
     }
 
     private var activePassengers: [BookingWithRider] {
@@ -454,12 +458,12 @@ struct DriverTripDetailsView: View {
                         PassengerCard(
                             passenger: passenger,
                             onChat: { openChat(with: passenger) },
-                            onRate: passenger.bookingState == .completed && !hasRatedPassenger(passenger.id) ? {
+                            onRate: passenger.bookingState == .completed && ratingForPassenger(passenger.id) == nil ? {
                                 driverSelectedStars = 5
                                 driverRatingComment = ""
                                 ratingTarget = passenger
                             } : nil,
-                            isRated: passenger.bookingState == .completed && hasRatedPassenger(passenger.id)
+                            rating: passenger.bookingState == .completed ? ratingForPassenger(passenger.id) : nil
                         )
                     }
                 }
@@ -529,6 +533,7 @@ struct DriverTripDetailsView: View {
                                     comment: comment.isEmpty ? nil : comment
                                 )
                                 UserDefaults.standard.set(true, forKey: "driver_rated_\(target.id)")
+                                UserDefaults.standard.set(driverSelectedStars, forKey: "driver_rating_score_\(target.id)")
                                 ratedBookingIds.insert(target.id)
                                 ratingTarget = nil
                                 await authVM.refreshUser()
