@@ -34,23 +34,20 @@ struct DriverTripDetailsView: View {
         UserDefaults.standard.bool(forKey: "driver_rated_\(bookingId)")
     }
 
+    private var activePassengers: [BookingWithRider] {
+        passengers.filter { $0.bookingState == .approved || $0.bookingState == .completed }
+    }
+
     private var totalSeatsBooked: Int {
-        // Only count seats from approved/completed passengers (same filter as earnings)
-        passengers
-            .filter { $0.bookingState == .approved || $0.bookingState == .completed }
-            .reduce(0) { $0 + $1.seatsBooked }
+        activePassengers.reduce(0) { $0 + $1.seatsBooked }
     }
 
     private var totalEarnings: Double {
-        // After completion, use the authoritative trip payout set by the backend
         if let payout = trip.totalPayout, payout > 0 {
             return payout
         }
-        // While active, sum fares from approved/completed/pending passengers
-        return passengers
-            .filter { $0.bookingState == .approved || $0.bookingState == .completed }
-            .compactMap { $0.fare }
-            .reduce(0, +)
+        let fares = activePassengers.compactMap { $0.fare }
+        return fares.reduce(0, +)
     }
 
     private var pendingBookings: [BookingWithRider] {
