@@ -10,7 +10,7 @@ export const config = {
   dbUrl: process.env.DATABASE_URL || 'postgresql://postgres:password@localhost:5432/lessgo_db',
   
   // Notification Service
-  notificationServiceUrl: process.env.NOTIFICATION_SERVICE_URL || 'http://localhost:8004',
+  notificationServiceUrl: process.env.NOTIFICATION_SERVICE_URL || 'http://127.0.0.1:3006',
   
   // Mapping
   googleMapsApiKey: process.env.GOOGLE_MAPS_API_KEY || '',
