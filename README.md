@@ -1,185 +1,310 @@
-# LessGo - Carpooling Backend
+# LessGo - SJSU Ridesharing
 
-A microservices-based backend system for the LessGo carpooling platform.
+> **Campus carpooling, reimagined.** ML-powered matching, SJSU-verified drivers, and rides that actually make sense for students.
+
+---
+
+## Why LessGo?
+
+Uber and Lyft are great for city-wide rides, but they're not built for campus life. LessGo is different:
+
+- **SJSU-only** — Every driver and rider is verified with a valid SJSU ID
+- **Smart matching** — ML algorithms pair you with drivers going your way, not just whoever's closest
+- **Posted rides** — Drivers post scheduled trips; you browse and book what works for your schedule
+- **Student-friendly pricing** — Dynamic pricing that considers detours, not surge multipliers
+- **Real-time everything** — Chat with your driver, track their location, get instant booking updates
+
+LessGo connects SJSU students who are already going the same way. It's carpooling that actually works.
+
+---
+
+## Features
+
+### 🧠 ML-Powered Matching
+Our three-stage matching pipeline uses RShareForm HIN embeddings to rank trips by compatibility:
+1. **PostGIS proximity filter** — Find trips within 5km and ±30 minutes
+2. **Embedding similarity** — Rank by route compatibility using ML
+3. **Scost optimization** — Balance detour distance, wait time, and social history
+
+### 📱 Posted Rides Model
+- Drivers post scheduled trips with origin, destination, and departure time
+- Riders search and book rides that fit their schedule
+- Bookings require driver approval — no surprise pickups
+- Support for recurring trips and multi-passenger rides
+
+### 🔐 SJSU ID Verification
+- All users must verify with a valid SJSU student ID
+- Verification powered by ML-based document processing
+- Only verified users can post trips or book rides
+
+### 💬 Real-Time Communication
+- In-app chat between riders and drivers
+- Real-time location tracking during active trips
+- Push notifications for booking updates and trip status
+
+### 💳 Seamless Payments
+- Stripe-powered payment processing
+- Automatic fare calculation based on distance and detours
+- Secure payment capture only after trip completion
+
+---
+
+## Quick Start
+
+### iOS App
+
+1. **Clone and open in Xcode**
+   ```bash
+   git clone https://github.com/your-org/SJSU_Ridesharing.git
+   cd SJSU_Ridesharing/LessGo
+   open LessGo.xcodeproj
+   ```
+
+2. **Build and run**
+   - Select iPhone 15 Pro simulator
+   - Press ⌘R to build and launch
+
+3. **Try it out**
+   - Login with demo credentials: `user1@sjsu.edu` / `Password123`
+   - Search for rides to/from SJSU
+   - Book a ride and experience the flow
+
+### Backend Services
+
+1. **Install dependencies**
+   ```bash
+   npm install
+   cd shared && npm run build && cd ..
+   ```
+
+2. **Start infrastructure**
+   ```bash
+   docker compose up -d  # Redis only (PostgreSQL is on Supabase)
+   ```
+
+3. **Run services**
+   ```bash
+   npm run dev:all  # Starts all 8 services at once
+   ```
+
+For detailed setup instructions, see [SETUP.md](SETUP.md).
+
+---
 
 ## Architecture
 
-This project uses a microservices architecture with the following services:
+LessGo uses a microservices architecture with an iOS frontend and ML-powered backend:
 
-- **API Gateway**: Main entry point for all client requests
-- **Auth Service**: Handles authentication and authorization
-- **User Service**: Manages user profiles and preferences
-- **Trip Service**: Handles trip creation, management, and tracking
-- **Booking Service**: Manages booking requests and confirmations
-- **Payment Service**: Processes payments and transactions
-- **Notification Service**: Sends notifications via email, SMS, and push
-- **Grouping Service**: Handles carpool group formation and optimization
-- **Routing Service**: Calculates optimal routes and waypoints
-- **Safety Service**: Manages safety features and emergency protocols
-
-## Tech Stack
-
-- **Languages**: Node.js/TypeScript, Python
-- **Database**: PostgreSQL with PostGIS
-- **Cache**: Redis
-- **Message Queue**: Kafka (optional)
-- **API Gateway**: Node.js/Express service
-- **Authentication**: JWT
-
-## Getting Started
-
-### Prerequisites
-
-- Docker and Docker Compose
-- Node.js 22+ and Python 3.10+
-- Git
-
-### Setup
-
-1. Clone the repository:
-```bash
-git clone <repository-url>
-cd lessgo-backend
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                         iOS App (SwiftUI)                       │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐         │
+│  │  Rider   │  │  Driver  │  │   Chat   │  │  Profile │         │
+│  │  Views   │  │  Views   │  │   View   │  │   View   │         │
+│  └──────────┘  └──────────┘  └──────────┘  └──────────┘         │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                      API Gateway (Port 3000)                    │
+│    JWT validation · Rate limiting · Load Balancing· Routing     │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+        ┌─────────────────────┼─────────────────────┐
+        ▼                     ▼                     ▼
+┌──────────────┐    ┌──────────────┐    ┌──────────────┐
+│ Auth Service │    │ Trip Service │    │Booking Svc   │
+│   (3001)     │    │   (3003)     │    │   (3004)     │
+└──────────────┘    └──────────────┘    └──────────────┘
+        │                     │                     │
+        └─────────────────────┼─────────────────────┘
+                              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                    PostgreSQL + PostGIS (Supabase)              │
+│              Users · Trips · Bookings · Messages · Payments     │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                      ML Matching Pipeline                       │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐           │
+│  │  Embedding   │  │   Matching   │  │   Routing    │           │
+│  │   Service    │  │   Service    │  │   Service    │           │
+│  │   (Python)   │  │  (TypeScript)│  │   (Python)   │           │
+│  └──────────────┘  └──────────────┘  └──────────────┘           │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
-2. Copy the environment file:
-```bash
-cp .env.example .env
-```
+### Tech Stack
 
-3. Update the `.env` file with your actual configuration values.
+**Frontend**
+- Swift / SwiftUI
+- MVVM architecture
+- CoreLocation & MapKit
+- Combine framework
 
-4. Start Redis locally:
-```bash
-docker compose up -d
-```
+**Backend**
+- Node.js / TypeScript
+- Express.js
+- PostgreSQL + PostGIS
+- Redis (caching)
+- JWT authentication
 
-5. Set up the database through the bootstrap script:
-```bash
-# Migrations only
-npm run bootstrap:db
+**ML Pipeline**
+- Python (embedding & routing services)
+- RShareForm HIN embeddings
+- PostGIS geospatial queries
+- Custom matching algorithms
 
-# Fresh database only: migrations + seed demo data
-npm run bootstrap:db -- --fresh
-```
+**Infrastructure**
+- Google Kubernetes Engine (GKE)
+- Supabase (database)
+- Stripe (payments)
+- Google Maps (geocoding)
 
-If your Supabase database has already been seeded once, skip the `--fresh` run.
+---
 
 ## Project Structure
 
 ```
-lessgo-backend/
-├── docs/                      # Documentation
-│   ├── requirements/          # Requirements and specifications
-│   └── api/                   # API documentation
-├── services/                  # Microservices
-│   ├── api-gateway/          # API Gateway service
-│   ├── auth-service/         # Authentication service
-│   ├── user-service/         # User management service
-│   ├── trip-service/         # Trip management service
-│   ├── booking-service/      # Booking management service
-│   ├── payment-service/      # Payment processing service
-│   ├── notification-service/ # Notification service
-│   ├── grouping-service/     # Carpool grouping service
-│   ├── routing-service/      # Route calculation service
-│   └── safety-service/       # Safety features service
-├── shared/                    # Shared code and utilities
-│   ├── database/             # Database schemas and migrations
-│   ├── utils/                # Shared utility functions
-│   └── types/                # Shared type definitions
-├── scripts/                   # Utility scripts
-└── tests/                     # Tests
-    ├── integration/          # Integration tests
-    └── load/                 # Load tests
+SJSU_Ridesharing/
+├── LessGo/                          # iOS application
+│   ├── LessGo/                      # Swift source files
+│   │   ├── Core/                    # Feature modules
+│   │   │   ├── Home/               # RiderHomeView, DriverHomeView
+│   │   │   ├── Rider/              # Rider-specific views
+│   │   │   ├── Driver/             # Driver-specific views
+│   │   │   └── TripCreation/       # CreateTripView
+│   │   ├── Models/                 # Data models
+│   │   ├── Services/               # API services
+│   │   └── DesignSystem/          # UI components
+│   └── LessGo.xcodeproj/          # Xcode project
+├── services/                       # Backend microservices
+│   ├── api-gateway/                # Port 3000
+│   ├── auth-service/               # Port 3001
+│   ├── user-service/               # Port 3002
+│   ├── trip-service/               # Port 3003
+│   ├── booking-service/            # Port 3004
+│   ├── payment-service/            # Port 3005
+│   ├── notification-service/       # Port 3006
+│   ├── cost-calculation-service/   # Port 3009
+│   ├── embedding-service/          # ML embeddings (Python)
+│   └── routing-service/            # Route calculation (Python)
+├── shared/                         # Shared types and utilities
+│   ├── types/                      # TypeScript definitions
+│   ├── middleware/                 # Express middleware
+│   └── utils/                      # Utility functions
+├── db/migrations/                  # Database migrations
+├── k8s-manifests/                  # Kubernetes manifests
+├── tests/                          # Test scripts
+├── docs/                           # Documentation
+├── SETUP.md                        # Detailed setup guide
+└── CLAUDE.md                       # Developer context
 ```
 
-> Legacy cleanup note: the top-level [db/migrations/](db/migrations/) SQL snapshots are not used by the current npm migration workflow (`shared/database/migrations/` is the source of truth) and can be taken down after you confirm you no longer need the older SQL history.
+---
 
 ## Development
 
-Each service is independent and can be developed separately. See individual service README files for specific development instructions.
+### Running Locally
 
-## Testing
-
+**Backend:**
 ```bash
-# Run integration tests
-npm run test:integration
+# Start all services at once
+npm run dev:all
 
-# Run load tests
-npm run test:load
+# Or start individually
+cd services/api-gateway && npm run dev
+cd services/auth-service && npm run dev
+# ... etc for all 8 services
 ```
 
-## CI/CD Image Publishing and Deployment
-
-The workflow [`.github/workflows/cd-autopilot.yml`](.github/workflows/cd-autopilot.yml) now:
-
-1. Builds all service images (API gateway + 10 microservices)
-2. Pushes images to Google Artifact Registry
-3. Tags each image with both the commit SHA and `latest`
-
-Configure these GitHub repository variables:
-
-- `GCP_PROJECT_ID`
-- `AR_REPO_NAME`
-- `AR_LOCATION`
-
-Configure these GitHub repository secrets:
-
-- `GCP_WIF_PROVIDER`
-- `GCP_DEPLOYER_SA`
-- `DATABASE_URL`
-- `JWT_SECRET`
-- `GOOGLE_MAPS_API_KEY`
-- `STRIPE_SECRET_KEY`
-- `SMTP_HOST`
-- `SMTP_PORT`
-- `SMTP_USER`
-- `SMTP_PASS`
-- `FROM_EMAIL`
-
-Image naming format:
-
-- `${AR_LOCATION}-docker.pkg.dev/${GCP_PROJECT_ID}/${AR_REPO_NAME}/api-gateway:${GITHUB_SHA}`
-- `${AR_LOCATION}-docker.pkg.dev/${GCP_PROJECT_ID}/${AR_REPO_NAME}/auth-service:${GITHUB_SHA}`
-- ...and so on for each service.
-
-If you later deploy these images to Kubernetes, create an image pull secret in the target namespace if the repository is private.
-
-## GKE Deployment
-
-The manifests in [k8s-manifests/](k8s-manifests/) now point to the Artifact Registry images and keep service-to-service traffic on Kubernetes DNS names such as `http://auth-service:3001`.
-
-Recommended rollout order:
-
-1. Create the namespace, config map, and secret resources.
-2. Apply the service deployments.
-3. Expose `api-gateway` through a `LoadBalancer` service and use the assigned external IP directly.
-
-Example:
-
+**iOS:**
 ```bash
-kubectl apply -f k8s-manifests/namespace.yaml
-kubectl apply -f k8s-manifests/configmap.yaml
-# Apply your secret manifest here if you keep one outside the repo
-kubectl apply -f k8s-manifests/
-kubectl -n lessgo get svc api-gateway -o wide
+# Open in Xcode
+open LessGo/LessGo.xcodeproj
+
+# Build and run (⌘R)
 ```
 
-For the iOS app, the default API base URL is `https://lessgo-zeta.vercel.app/api` (via xcconfig).
+### Testing
 
-If you want to test against a local API gateway, set this Xcode Scheme environment variable:
+```bash
+# Run all backend tests
+./tests/run-all-tests.sh --all
 
-- `LESSGO_API_BASE_URL=http://127.0.0.1:3000/api`
+# Test iOS-specific features
+./tests/test-ios-features.sh
+```
 
-Then keep the gateway running locally (for example, `npm run dev:gateway`) while testing.
+### Database
+
+```bash
+# Run migrations
+npm run bootstrap:db
+
+# Fresh database with seed data
+npm run bootstrap:db -- --fresh
+```
+
+---
+
+## Demo Credentials
+
+After running `npm run bootstrap:db -- --fresh`, the database contains:
+
+**50 users:**
+- Emails: `user1@sjsu.edu` through `user50@sjsu.edu`
+- Password: `Password123`
+- 25 drivers (with vehicles), 25 riders
+- All SJSU-verified
+
+**108 trips:**
+- 54 trips TO SJSU from Bay Area hubs
+- 54 trips FROM SJSU to Bay Area hubs
+- Locations: SF, Oakland, Fremont, Palo Alto, and more
+- Times: Morning rush (7–9 AM) for TO SJSU, afternoon (3–7 PM) for FROM SJSU
+
+---
+
+## Deployment
+
+**Backend services** are deployed on Google Kubernetes Engine (GKE) using the manifests in `k8s-manifests/`. The CI/CD workflow builds and pushes Docker images to Google Artifact Registry on every commit.
+
+**iOS app** is distributed via TestFlight for beta testing and will be submitted to the App Store for public release.
+
+---
 
 ## Contributing
 
-1. Create a feature branch
-2. Make your changes
-3. Write tests
-4. Submit a pull request
+We welcome contributions! Here's how to get started:
+
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Make your changes
+4. Write tests for your changes
+5. Commit your changes (`git commit -m 'Add amazing feature'`)
+6. Push to the branch (`git push origin feature/amazing-feature`)
+7. Open a Pull Request
+
+Please read our code style guidelines and ensure all tests pass before submitting.
+
+---
 
 ## License
 
 To be determined
+
+---
+
+## Acknowledgments
+
+- Built for SJSU students, by SJSU students
+- ML matching powered by RShareForm embeddings
+- Database hosted on Supabase
+- Payments processed by Stripe
+- Maps and geocoding by Google Maps Platform
+
+---
+
+**Questions?** Open an issue or reach out to the team. Happy carpooling! 🚗
