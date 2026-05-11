@@ -136,12 +136,12 @@ class BookingViewModel: ObservableObject {
 
     // MARK: - Create Booking
 
-    func createBooking(tripId: String, seats: Int) async -> Bool {
+    func createBooking(tripId: String, seats: Int, pickupLocation: PickupLocationPayload? = nil) async -> Bool {
         isCreating = true
         errorMessage = nil
         defer { isCreating = false }
         do {
-            let response = try await bookingService.createBooking(tripId: tripId, seatsBooked: seats)
+            let response = try await bookingService.createBooking(tripId: tripId, seatsBooked: seats, pickupLocation: pickupLocation)
             currentBooking = response.booking
             UINotificationFeedbackGenerator().notificationOccurred(.success)
             return true

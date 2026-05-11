@@ -43,7 +43,16 @@ export const createBooking = async (
 ): Promise<{ booking: Booking; quote: Quote }> => {
   const { trip_id, seats_booked, scost_breakdown } = bookingData;
   // pickup_location and fare are not in CreateBookingRequest type but may be sent by clients.
-  const pickupLocation = (bookingData as any).pickup_location ?? null;
+  const rawPickup = (bookingData as any).pickup_location ?? null;
+  const pickupLocation = rawPickup
+    ? {
+        lat: rawPickup.lat,
+        lng: rawPickup.lng,
+        address: typeof rawPickup.address === 'string' && rawPickup.address.trim()
+          ? rawPickup.address.trim()
+          : 'Shared location',
+      }
+    : null;
   const clientFare: number | null = (bookingData as any).fare ?? null;
 
   // Check trip availability

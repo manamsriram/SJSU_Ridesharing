@@ -10,8 +10,8 @@ class BookingService {
 
     // MARK: - Create Booking
 
-    func createBooking(tripId: String, seatsBooked: Int, fare: Double? = nil) async throws -> CreateBookingResponse {
-        let request = CreateBookingRequest(tripId: tripId, seatsBooked: seatsBooked, fare: fare)
+    func createBooking(tripId: String, seatsBooked: Int, fare: Double? = nil, pickupLocation: PickupLocationPayload? = nil) async throws -> CreateBookingResponse {
+        let request = CreateBookingRequest(tripId: tripId, seatsBooked: seatsBooked, fare: fare, pickupLocation: pickupLocation)
 
         let response: CreateBookingResponse = try await network.request(
             endpoint: "/bookings",

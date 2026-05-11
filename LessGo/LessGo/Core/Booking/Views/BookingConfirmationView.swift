@@ -209,6 +209,11 @@ struct BookingConfirmationView: View {
         }
     }
 
+    private var isToSJSU: Bool {
+        trip.destination.lowercased().contains("sjsu") ||
+        trip.destination.lowercased().contains("san jose state")
+    }
+
     private func confirmBooking() {
         // Prevent duplicate bookings from multiple taps
         guard !isBookingComplete, !bookingVM.isCreating else { return }
@@ -223,7 +228,22 @@ struct BookingConfirmationView: View {
         isBookingComplete = true
 
         Task {
-            let success = await bookingVM.createBooking(tripId: trip.id, seats: seats)
+            var pickupPayload: PickupLocationPayload? = nil
+            if isToSJSU, let location = LocationManager.shared.currentLocation {
+                let geocoder = CLGeocoder()
+                let placemarks = try? await geocoder.reverseGeocodeLocation(location)
+                let placemark = placemarks?.first
+                let joined = [placemark?.subThoroughfare, placemark?.thoroughfare, placemark?.locality]
+                    .compactMap { $0 }.joined(separator: " ")
+                let address = joined.isEmpty ? "Shared location" : joined
+                pickupPayload = PickupLocationPayload(
+                    lat: location.coordinate.latitude,
+                    lng: location.coordinate.longitude,
+                    address: address
+                )
+            }
+
+            let success = await bookingVM.createBooking(tripId: trip.id, seats: seats, pickupLocation: pickupPayload)
             if success {
                 withAnimation { showSuccess = true }
             } else {
