@@ -520,29 +520,33 @@ export async function acceptMatch(matchId: string, driverId: string): Promise<vo
   }
   const { request_id, trip_id, scost_breakdown } = result.rows[0];
 
-  // Get rider ID from request
-  const reqRow = await pool.query<{ rider_id: string }>(
+  // Get rider ID and origin from request
+  const reqRow = await pool.query<{ rider_id: string, origin: string, origin_lat: number, origin_lng: number }>(
     `UPDATE trip_requests SET status = 'matched', matched_trip_id = $2, updated_at = NOW()
-     WHERE request_id = $1 RETURNING rider_id`,
+     WHERE request_id = $1 RETURNING rider_id, origin, origin_lat, origin_lng`,
     [request_id, trip_id]
   );
 
-  const riderId = reqRow.rows[0]?.rider_id;
+  const { rider_id: riderId, origin, origin_lat, origin_lng } = reqRow.rows[0];
 
   console.log(`[matching] Match ${matchId} accepted. Rider ${riderId} → trip ${trip_id}`);
 
   // Create booking with Scost breakdown (default to 1 seat for on-demand requests)
   try {
-    await axios.post(`${config.bookingServiceUrl}/bookings`, {
+    await axios.post(`${config.bookingServiceUrl}/bookings/internal`, {
       trip_id,
+      rider_id: riderId,
       seats_booked: 1,
-      scost_breakdown
+      scost_breakdown,
+      pickup_location: {
+        lat: origin_lat,
+        lng: origin_lng,
+        address: origin
+      }
     }, {
       headers: {
         'Content-Type': 'application/json',
-        // Note: In production, this should include proper authentication
-        // For now, we're calling the booking service directly without auth
-        // since this is an internal service-to-service call
+        'x-internal-service': 'trip-service'
       }
     });
     console.log(`[matching] Booking created for rider ${riderId} on trip ${trip_id}`);

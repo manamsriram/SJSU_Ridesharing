@@ -223,7 +223,16 @@ struct BookingConfirmationView: View {
         isBookingComplete = true
 
         Task {
-            let success = await bookingVM.createBooking(tripId: trip.id, seats: seats)
+            var pickupPayload: PickupLocationPayload? = nil
+            if let originPoint = trip.originPoint {
+                pickupPayload = PickupLocationPayload(
+                    lat: originPoint.lat,
+                    lng: originPoint.lng,
+                    address: trip.origin
+                )
+            }
+            
+            let success = await bookingVM.createBooking(tripId: trip.id, seats: seats, pickupLocation: pickupPayload)
             if success {
                 withAnimation { showSuccess = true }
             } else {

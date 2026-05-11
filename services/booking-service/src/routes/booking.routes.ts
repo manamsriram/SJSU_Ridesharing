@@ -34,6 +34,26 @@ router.post(
   asyncHandler(bookingController.createBooking)
 );
 
+// Internal route to create a booking on behalf of a rider (used by matching flow)
+router.post(
+  '/internal',
+  [
+    body('trip_id').notEmpty().withMessage('Trip ID is required').isUUID(),
+    body('rider_id').notEmpty().withMessage('Rider ID is required').isUUID(),
+    body('seats_booked').isInt({ min: 1, max: 8 }).withMessage('Seats booked must be 1-8'),
+  ],
+  validateRequest,
+  asyncHandler(async (req: express.Request, res: express.Response) => {
+    if (req.headers['x-internal-service'] !== 'trip-service') {
+      res.status(403).json({ status: 'error', message: 'Forbidden' });
+      return;
+    }
+    const { rider_id, ...bookingData } = req.body;
+    const result = await bookingService.createBooking(rider_id, bookingData);
+    res.status(201).json({ status: 'success', data: result, message: 'Booking created successfully' });
+  })
+);
+
 router.get('/', authenticateToken, asyncHandler(bookingController.listBookings));
 
 router.get('/:id', asyncHandler(bookingController.getBooking));

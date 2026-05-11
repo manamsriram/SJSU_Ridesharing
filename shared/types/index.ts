@@ -138,7 +138,7 @@ export interface Booking {
   hold_expires_at?: Date | null;
   payment_deadline_at?: Date | string | null;
   cancellation_reason?: string | null;
-  pickup_location?: { lat: number; lng: number } | null;
+  pickup_location?: { lat: number; lng: number; address?: string } | null;
   created_at: Date;
   updated_at: Date;
 }
