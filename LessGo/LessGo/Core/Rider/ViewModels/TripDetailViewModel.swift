@@ -1,6 +1,7 @@
 import Foundation
 import Combine
 import UIKit
+import CoreLocation
 
 // MARK: - Trip Detail ViewModel
 
@@ -27,12 +28,14 @@ class TripDetailViewModel: ObservableObject {
     private let bookingService = BookingService.shared
     private var pollingTimer: Timer?
     private var tripId: String
+    private let criteria: SearchCriteria?
 
     // MARK: - Initialization
 
-    init(trip: TripWithDriver) {
+    init(trip: TripWithDriver, criteria: SearchCriteria? = nil) {
         self.trip = trip
         self.tripId = trip.id
+        self.criteria = criteria
     }
 
     // MARK: - Deinitialization
@@ -98,7 +101,24 @@ class TripDetailViewModel: ObservableObject {
 
         do {
             let fare = trip?.costBreakdown?.perRiderSplit ?? trip?.estimatedCost
-            let response = try await bookingService.createBooking(tripId: tripId, seatsBooked: 1, fare: fare)
+            var pickupLocation: PickupLocationPayload? = nil
+            
+            if let criteria = criteria {
+                if criteria.direction == .toSJSU {
+                    pickupLocation = PickupLocationPayload(lat: criteria.coordinate.latitude, lng: criteria.coordinate.longitude, address: criteria.location)
+                } else {
+                    // from SJSU: pickup is at SJSU, which matches the trip's origin
+                    if let lat = trip?.originLat, let lng = trip?.originLng, let addr = trip?.origin {
+                        pickupLocation = PickupLocationPayload(lat: lat, lng: lng, address: addr)
+                    }
+                }
+            } else {
+                // Fallback if no criteria provided (e.g. deep links)
+                if let lat = trip?.originLat, let lng = trip?.originLng, let addr = trip?.origin {
+                    pickupLocation = PickupLocationPayload(lat: lat, lng: lng, address: addr)
+                }
+            }
+            let response = try await bookingService.createBooking(tripId: tripId, seatsBooked: 1, fare: fare, pickupLocation: pickupLocation)
             booking = response.booking
             bookingState = .pending
 

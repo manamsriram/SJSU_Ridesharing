@@ -12,7 +12,7 @@ struct TripDetailView: View {
     private let criteria: SearchCriteria?
 
     init(trip: TripWithDriver, criteria: SearchCriteria? = nil) {
-        _viewModel = StateObject(wrappedValue: TripDetailViewModel(trip: trip))
+        _viewModel = StateObject(wrappedValue: TripDetailViewModel(trip: trip, criteria: criteria))
         self.criteria = criteria
     }
 

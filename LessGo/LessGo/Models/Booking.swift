@@ -237,15 +237,23 @@ struct Quote: Codable {
 
 // MARK: - Booking Request/Response Models
 
+struct PickupLocationPayload: Codable {
+    let lat: Double
+    let lng: Double
+    let address: String
+}
+
 struct CreateBookingRequest: Codable {
     let tripId: String
     let seatsBooked: Int
     let fare: Double?
+    let pickupLocation: PickupLocationPayload?
 
     enum CodingKeys: String, CodingKey {
         case tripId = "trip_id"
         case seatsBooked = "seats_booked"
         case fare
+        case pickupLocation = "pickup_location"
     }
 }
 
