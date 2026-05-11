@@ -241,6 +241,12 @@ struct BookingConfirmationView: View {
                     lng: location.coordinate.longitude,
                     address: address
                 )
+            } else if !isToSJSU, let originPoint = trip.originPoint {
+                pickupPayload = PickupLocationPayload(
+                    lat: originPoint.lat,
+                    lng: originPoint.lng,
+                    address: trip.origin
+                )
             }
 
             let success = await bookingVM.createBooking(tripId: trip.id, seats: seats, pickupLocation: pickupPayload)
