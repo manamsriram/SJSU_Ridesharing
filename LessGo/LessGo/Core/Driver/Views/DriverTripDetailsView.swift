@@ -143,6 +143,9 @@ struct DriverTripDetailsView: View {
                         )
                     }
 
+                    // Route itinerary card
+                    routeItineraryCard
+
                     // Trip details card
                     tripDetailsCard
 
@@ -289,6 +292,86 @@ struct DriverTripDetailsView: View {
         }
         .sheet(item: $ratingTarget) { _ in
             passengerRatingSheet
+        }
+    }
+
+    private var routeItineraryCard: some View {
+        let approved = approvedBookings
+        return VStack(spacing: 0) {
+            HStack {
+                Text("Route")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(.textSecondary)
+                Spacer()
+            }
+            .padding(.bottom, 12)
+
+            routeStopRow(icon: "car.fill", iconColor: .brand, label: "Driver Start", address: trip.origin)
+            routeConnector()
+
+            if isLoading {
+                HStack(spacing: 10) {
+                    ProgressView()
+                        .scaleEffect(0.7)
+                        .frame(width: 26, height: 26)
+                    Text("Loading rider pickups…")
+                        .font(.system(size: 12))
+                        .foregroundColor(.textTertiary)
+                    Spacer()
+                }
+                routeConnector()
+            } else {
+                ForEach(approved) { passenger in
+                    let addr = passenger.pickupLocation?.address ?? "Pickup location"
+                    routeStopRow(
+                        icon: "person.fill",
+                        iconColor: .brandOrange,
+                        label: "\(passenger.riderName)'s Pickup",
+                        address: addr
+                    )
+                    routeConnector()
+                }
+            }
+
+            routeStopRow(icon: "mappin.fill", iconColor: .brandGreen, label: "Final Dropoff", address: trip.destination)
+        }
+        .padding(16)
+        .background(Color.cardBackground)
+        .cornerRadius(16)
+        .overlay(
+            RoundedRectangle(cornerRadius: 16)
+                .strokeBorder(DesignSystem.Colors.border.opacity(0.7), lineWidth: 1)
+        )
+    }
+
+    private func routeStopRow(icon: String, iconColor: Color, label: String, address: String) -> some View {
+        HStack(alignment: .center, spacing: 10) {
+            Image(systemName: icon)
+                .font(.system(size: 13))
+                .foregroundColor(iconColor)
+                .frame(width: 26, height: 26)
+                .background(iconColor.opacity(0.12))
+                .clipShape(Circle())
+            VStack(alignment: .leading, spacing: 1) {
+                Text(label)
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundColor(iconColor)
+                Text(address)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundColor(.textPrimary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer()
+        }
+    }
+
+    private func routeConnector() -> some View {
+        HStack(spacing: 0) {
+            Spacer().frame(width: 12)
+            Rectangle()
+                .fill(DesignSystem.Colors.border.opacity(0.5))
+                .frame(width: 2, height: 14)
+            Spacer()
         }
     }
 

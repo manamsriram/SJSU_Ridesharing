@@ -718,14 +718,22 @@ export const updatePickupLocation = async (
     throw new Error('Unauthorized');
   }
 
-  // Update pickup location
+  // Update pickup location — address must be a non-empty string to satisfy the DB check constraint
+  const location = {
+    lat: pickupLocation.lat,
+    lng: pickupLocation.lng,
+    address: typeof pickupLocation.address === 'string' && pickupLocation.address.trim()
+      ? pickupLocation.address.trim()
+      : 'Shared location',
+  };
+
   const query = `
     UPDATE bookings
     SET pickup_location = $1, updated_at = current_timestamp
     WHERE booking_id = $2
   `;
 
-  await pool.query(query, [JSON.stringify(pickupLocation), bookingId]);
+  await pool.query(query, [JSON.stringify(location), bookingId]);
 
   // Return updated booking
   const updatedBooking = await getBookingById(bookingId);

@@ -440,16 +440,25 @@ struct BookingSuccessView: View {
         isUpdatingLocation = true
         locationManager.startUpdating()
 
-        // Wait a moment for location to be available
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
             if let location = locationManager.currentLocation {
                 Task {
                     do {
+                        let geocoder = CLGeocoder()
+                        let placemarks = try? await geocoder.reverseGeocodeLocation(location)
+                        let placemark = placemarks?.first
+                        let joined = [
+                            placemark?.subThoroughfare,
+                            placemark?.thoroughfare,
+                            placemark?.locality
+                        ].compactMap { $0 }.joined(separator: " ")
+                        let address = joined.isEmpty ? "Shared location" : joined
+
                         _ = try await BookingService.shared.updatePickupLocation(
                             id: bookingId,
                             lat: location.coordinate.latitude,
                             lng: location.coordinate.longitude,
-                            address: nil
+                            address: address
                         )
                         isUpdatingLocation = false
                         UINotificationFeedbackGenerator().notificationOccurred(.success)

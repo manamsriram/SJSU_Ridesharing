@@ -71,7 +71,7 @@ router.put(
   [
     body('lat').isFloat({ min: -90, max: 90 }).withMessage('Latitude must be between -90 and 90'),
     body('lng').isFloat({ min: -180, max: 180 }).withMessage('Longitude must be between -180 and 180'),
-    body('address').optional().trim(),
+    body('address').optional().isString().trim(),
   ],
   validateRequest,
   asyncHandler(bookingController.updatePickupLocation)
