@@ -105,7 +105,8 @@ class TripDetailViewModel: ObservableObject {
             
             if let criteria = criteria {
                 if criteria.direction == .toSJSU {
-                    pickupLocation = PickupLocationPayload(lat: criteria.coordinate.latitude, lng: criteria.coordinate.longitude, address: criteria.location)
+                    let pickupAddress = criteria.address.isEmpty ? criteria.location : criteria.address
+                    pickupLocation = PickupLocationPayload(lat: criteria.coordinate.latitude, lng: criteria.coordinate.longitude, address: pickupAddress)
                 } else {
                     // from SJSU: pickup is at SJSU, which matches the trip's origin
                     if let lat = trip?.originLat, let lng = trip?.originLng, let addr = trip?.origin {

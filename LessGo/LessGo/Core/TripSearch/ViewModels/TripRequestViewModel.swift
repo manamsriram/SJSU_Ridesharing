@@ -18,6 +18,8 @@ class TripRequestViewModel: ObservableObject {
     @Published var state: TripRequestState = .idle
     @Published var origin: String = ""
     @Published var destination: String = ""
+    @Published var originAddress: String = ""
+    @Published var destinationAddress: String = ""
     @Published var departureTime: Date = Date().addingTimeInterval(900) // default: 15 min from now
     @Published var originCoordinate: CLLocationCoordinate2D?
     @Published var destinationCoordinate: CLLocationCoordinate2D?
@@ -90,6 +92,8 @@ class TripRequestViewModel: ObservableObject {
         state = .idle
         origin = ""
         destination = ""
+        originAddress = ""
+        destinationAddress = ""
         originCoordinate = nil
         destinationCoordinate = nil
         departureTime = Date().addingTimeInterval(900)

@@ -7,8 +7,17 @@ import MapKit
 struct SearchCriteria {
     let direction: TripDirection
     let location: String
+    let address: String
     let coordinate: CLLocationCoordinate2D
     let departureTime: Date
+
+    init(direction: TripDirection, location: String, address: String = "", coordinate: CLLocationCoordinate2D, departureTime: Date) {
+        self.direction = direction
+        self.location = location
+        self.address = address
+        self.coordinate = coordinate
+        self.departureTime = departureTime
+    }
 
     enum TripDirection: String {
         case toSJSU = "to_sjsu"

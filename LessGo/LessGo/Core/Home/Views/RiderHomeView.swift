@@ -596,16 +596,19 @@ struct RiderHomeView: View {
                 // Create search criteria and navigate to search results
                 let direction: SearchCriteria.TripDirection
                 let location: String
+                let address: String
                 let coordinate: CLLocationCoordinate2D
 
                 switch directionChoice {
                 case .toSJSU:
                     direction = .toSJSU
                     location = requestVM.origin
+                    address = requestVM.originAddress
                     coordinate = requestVM.originCoordinate ?? AppConstants.sjsuCoordinate
                 case .fromSJSU:
                     direction = .fromSJSU
                     location = requestVM.destination
+                    address = requestVM.destinationAddress
                     coordinate = requestVM.destinationCoordinate ?? AppConstants.sjsuCoordinate
                 case .none:
                     return
@@ -614,6 +617,7 @@ struct RiderHomeView: View {
                 searchCriteria = SearchCriteria(
                     direction: direction,
                     location: location,
+                    address: address,
                     coordinate: coordinate,
                     departureTime: requestVM.departureTime
                 )
@@ -667,9 +671,11 @@ struct RiderHomeView: View {
                     isAutocompleting = false
                     if isDestination {
                         requestVM.destination = ""
+                        requestVM.destinationAddress = ""
                         requestVM.destinationCoordinate = nil
                     } else {
                         requestVM.origin = ""
+                        requestVM.originAddress = ""
                         requestVM.originCoordinate = nil
                     }
                 }) {
@@ -789,8 +795,10 @@ struct RiderHomeView: View {
         directionChoice = .none
         sheetExpanded = false
         requestVM.origin = ""
+        requestVM.originAddress = ""
         requestVM.originCoordinate = nil
         requestVM.destination = ""
+        requestVM.destinationAddress = ""
         requestVM.destinationCoordinate = nil
     }
 
@@ -813,9 +821,11 @@ struct RiderHomeView: View {
         switch directionChoice {
         case .toSJSU:
             requestVM.origin = place.name
+            requestVM.originAddress = place.subtitle
             requestVM.originCoordinate = place.coordinate
         case .fromSJSU:
             requestVM.destination = place.name
+            requestVM.destinationAddress = place.subtitle
             requestVM.destinationCoordinate = place.coordinate
         case .none:
             break

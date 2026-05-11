@@ -248,15 +248,16 @@ struct TripDetailView: View {
         let riderDropoff: String
 
         if let c = criteria {
+            let displayLabel = c.address.isEmpty ? c.location : c.address
             switch c.direction {
             case .toSJSU:
                 driverStart  = trip.origin
-                riderPickup  = c.location
+                riderPickup  = displayLabel
                 riderDropoff = "San Jose State University"
             case .fromSJSU:
                 driverStart  = trip.origin
                 riderPickup  = "San Jose State University"
-                riderDropoff = c.location
+                riderDropoff = displayLabel
             }
         } else {
             driverStart  = trip.origin
