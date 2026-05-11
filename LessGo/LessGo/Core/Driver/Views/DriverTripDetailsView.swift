@@ -74,6 +74,58 @@ struct DriverTripDetailsView: View {
         }
     }
 
+    private var allPickupCoords: [CLLocationCoordinate2D] {
+        passengers.compactMap { booking in
+            guard let pl = booking.pickupLocation else { return nil }
+            return CLLocationCoordinate2D(latitude: pl.lat, longitude: pl.lng)
+        }
+    }
+
+    private var orderedPickupStops: [PickupStop] {
+        if !anchorPoints.isEmpty {
+            return anchorPoints
+                .filter { $0.type == .pickup }
+                .enumerated()
+                .compactMap { i, anchor in
+                    guard let riderId = anchor.riderId,
+                          let passenger = passengers.first(where: { $0.riderId == riderId }),
+                          let pickup = passenger.pickupLocation else { return nil }
+                    let address = pickup.address ?? String(format: "%.4f, %.4f", pickup.lat, pickup.lng)
+                    return PickupStop(order: i + 1, passenger: passenger, address: address, etaOffsetSeconds: anchor.etaOffsetSeconds)
+                }
+        }
+
+        let withPickup = passengers.filter {
+            $0.pickupLocation != nil &&
+            ($0.bookingState == .approved || $0.bookingState == .pending || $0.bookingState == .completed)
+        }
+
+        let sorted: [BookingWithRider]
+        if let origin = trip.originPoint {
+            let originLoc = CLLocation(latitude: origin.lat, longitude: origin.lng)
+            sorted = withPickup.sorted {
+                let a = CLLocation(latitude: $0.pickupLocation!.lat, longitude: $0.pickupLocation!.lng)
+                let b = CLLocation(latitude: $1.pickupLocation!.lat, longitude: $1.pickupLocation!.lng)
+                return a.distance(from: originLoc) < b.distance(from: originLoc)
+            }
+        } else {
+            sorted = withPickup.sorted { $0.createdAt < $1.createdAt }
+        }
+
+        return sorted.enumerated().map { i, passenger in
+            let pickup = passenger.pickupLocation!
+            let address = pickup.address ?? String(format: "%.4f, %.4f", pickup.lat, pickup.lng)
+            return PickupStop(order: i + 1, passenger: passenger, address: address, etaOffsetSeconds: nil)
+        }
+    }
+
+    private func formatEtaOffset(_ seconds: Double) -> String {
+        let minutes = Int(seconds / 60)
+        if minutes < 60 { return "+\(minutes) min" }
+        let h = minutes / 60, m = minutes % 60
+        return m > 0 ? "+\(h)h \(m)m" : "+\(h)h"
+    }
+
     @ViewBuilder
     private var routeMapWithPassengers: some View {
         let origin = trip.originPoint?.clLocationCoordinate2D
@@ -95,19 +147,19 @@ struct DriverTripDetailsView: View {
     }
 
     private func routeMapViewFallback(origin: CLLocationCoordinate2D?, destination: CLLocationCoordinate2D?) -> some View {
-        let pickups = approvedPickupCoords
-        let waypoint = pickups.first
+        let allPickups = allPickupCoords
+        let waypoint = approvedPickupCoords.first
         var fitCoords: [CLLocationCoordinate2D] = []
         if let o = origin { fitCoords.append(o) }
         if let d = destination { fitCoords.append(d) }
-        fitCoords.append(contentsOf: pickups)
+        fitCoords.append(contentsOf: allPickups)
 
         return RouteMapView(
             origin: origin,
             destination: destination,
             driver: nil,
             waypoint: waypoint,
-            riders: pickups,
+            riders: allPickups,
             fitAnchors: fitCoords.isEmpty ? nil : fitCoords,
             showsUserLocation: true
         )
@@ -148,6 +200,9 @@ struct DriverTripDetailsView: View {
 
                     // Stats card
                     statsCard
+
+                    // Pickup timeline
+                    pickupTimelineSection
 
                     // Passengers section
                     passengersSection
@@ -297,7 +352,7 @@ struct DriverTripDetailsView: View {
             detailRow(
                 icon: "mappin.circle.fill",
                 iconColor: .brand,
-                title: "Pickup",
+                title: "Start",
                 value: trip.origin
             )
             Divider()
@@ -392,6 +447,134 @@ struct DriverTripDetailsView: View {
             RoundedRectangle(cornerRadius: 16)
                 .strokeBorder(DesignSystem.Colors.border.opacity(0.7), lineWidth: 1)
         )
+    }
+
+    @ViewBuilder
+    private var pickupTimelineSection: some View {
+        let stops = orderedPickupStops
+        if !stops.isEmpty && !isLoading {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(spacing: 6) {
+                    Text("Pickup Order")
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundColor(.textPrimary)
+                    if anchorPoints.isEmpty {
+                        Text("(approx.)")
+                            .font(.system(size: 12))
+                            .foregroundColor(.textTertiary)
+                    }
+                    Spacer()
+                }
+
+                VStack(spacing: 0) {
+                    timelineEndpointRow(
+                        icon: "car.fill", color: .brandGold,
+                        label: "YOUR START", address: trip.origin,
+                        hasLineBelow: true
+                    )
+                    ForEach(Array(stops.enumerated()), id: \.offset) { i, stop in
+                        timelineStopRow(stop: stop, hasLineBelow: true)
+                    }
+                    timelineEndpointRow(
+                        icon: "flag.fill", color: .brandGreen,
+                        label: "DESTINATION", address: trip.destination,
+                        hasLineBelow: false
+                    )
+                }
+            }
+            .padding(16)
+            .background(Color.cardBackground)
+            .cornerRadius(16)
+            .overlay(
+                RoundedRectangle(cornerRadius: 16)
+                    .strokeBorder(DesignSystem.Colors.border.opacity(0.7), lineWidth: 1)
+            )
+        }
+    }
+
+    private func timelineEndpointRow(icon: String, color: Color, label: String, address: String, hasLineBelow: Bool) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            VStack(spacing: 0) {
+                ZStack {
+                    Circle().fill(color).frame(width: 28, height: 28)
+                    Image(systemName: icon).font(.system(size: 11)).foregroundColor(.white)
+                }
+                if hasLineBelow {
+                    Rectangle()
+                        .fill(Color(uiColor: .separator))
+                        .frame(width: 2)
+                        .frame(maxHeight: .infinity)
+                }
+            }
+            .frame(width: 28)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(label)
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundColor(.textTertiary)
+                Text(address)
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundColor(.textPrimary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(.bottom, hasLineBelow ? 20 : 0)
+
+            Spacer()
+        }
+    }
+
+    private func timelineStopRow(stop: PickupStop, hasLineBelow: Bool) -> some View {
+        let isPending = stop.passenger.bookingState == .pending
+        return HStack(alignment: .top, spacing: 12) {
+            VStack(spacing: 0) {
+                ZStack {
+                    Circle()
+                        .fill(isPending ? Color.brandGold : Color.brand)
+                        .frame(width: 28, height: 28)
+                    Text("\(stop.order)")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundColor(.white)
+                }
+                if hasLineBelow {
+                    Rectangle()
+                        .fill(Color(uiColor: .separator))
+                        .frame(width: 2)
+                        .frame(maxHeight: .infinity)
+                }
+            }
+            .frame(width: 28)
+
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 6) {
+                    Text(stop.passenger.riderName)
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundColor(.textPrimary)
+                    if isPending {
+                        Text("Pending")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundColor(.brandGold)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Color.brandGold.opacity(0.12))
+                            .cornerRadius(4)
+                    }
+                }
+                Text(stop.address)
+                    .font(.system(size: 13))
+                    .foregroundColor(.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                if let eta = stop.etaOffsetSeconds {
+                    HStack(spacing: 4) {
+                        Image(systemName: "clock").font(.system(size: 11))
+                        Text(formatEtaOffset(eta)).font(.system(size: 12, weight: .medium))
+                    }
+                    .foregroundColor(.brand)
+                }
+            }
+            .padding(.bottom, hasLineBelow ? 20 : 0)
+
+            Spacer()
+        }
     }
 
     private var passengersSection: some View {
@@ -722,6 +905,15 @@ struct DriverTripDetailsView: View {
 }
 
 
+// MARK: - Pickup Timeline Model
+
+private struct PickupStop {
+    let order: Int
+    let passenger: BookingWithRider
+    let address: String
+    let etaOffsetSeconds: Double?
+}
+
 // MARK: - Debug Pill Helper
 
 private extension View {
@@ -771,147 +963,173 @@ private struct PendingBookingCard: View {
     }
 
     var body: some View {
-        HStack(spacing: 12) {
-            // Rider avatar
-            AsyncImage(url: URL(string: passenger.riderPicture ?? "")) { image in
-                image.resizable()
-            } placeholder: {
-                Circle()
-                    .fill(Color.brand.opacity(0.15))
-            }
-            .frame(width: 48, height: 48)
-            .clipShape(Circle())
-
-            // Rider info
-            VStack(alignment: .leading, spacing: 4) {
-                Text(passenger.riderName)
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundColor(.textPrimary)
-                HStack(spacing: 6) {
-                    Image(systemName: "star.fill")
-                        .font(.system(size: 10))
-                        .foregroundColor(.brandOrange)
-                    Text(String(format: "%.1f", passenger.riderRating))
-                        .font(.system(size: 12))
-                        .foregroundColor(.textSecondary)
-                    if let remaining = timeRemaining {
-                        Spacer()
-                        HStack(spacing: 3) {
-                            Image(systemName: "clock")
-                                .font(.system(size: 9))
-                            Text(remaining)
-                                .font(.system(size: 11, weight: .semibold))
-                        }
-                        .foregroundColor(countdownColor)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 3)
-                        .background(countdownColor.opacity(0.1))
-                        .clipShape(Capsule())
-                    }
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 12) {
+                // Rider avatar
+                AsyncImage(url: URL(string: passenger.riderPicture ?? "")) { image in
+                    image.resizable()
+                } placeholder: {
+                    Circle()
+                        .fill(Color.brand.opacity(0.15))
                 }
-                Text("\(passenger.seatsBooked) seat\(passenger.seatsBooked > 1 ? "s" : "")")
-                    .font(.system(size: 11))
-                    .foregroundColor(.textTertiary)
+                .frame(width: 48, height: 48)
+                .clipShape(Circle())
 
-                // Fare and scost breakdown information
-                if passenger.fare != nil || passenger.scostBreakdown != nil {
-                    HStack(spacing: 12) {
-                        if let fare = passenger.fare {
-                            HStack(spacing: 4) {
-                                Image(systemName: "dollarsign.circle.fill")
-                                    .font(.system(size: 11))
-                                    .foregroundColor(.brandGreen)
-                                Text(String(format: "$%.2f", fare))
-                                    .font(.system(size: 12, weight: .medium))
-                                    .foregroundColor(.textPrimary)
+                // Rider info
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(passenger.riderName)
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundColor(.textPrimary)
+                    HStack(spacing: 6) {
+                        Image(systemName: "star.fill")
+                            .font(.system(size: 10))
+                            .foregroundColor(.brandOrange)
+                        Text(String(format: "%.1f", passenger.riderRating))
+                            .font(.system(size: 12))
+                            .foregroundColor(.textSecondary)
+                        if let remaining = timeRemaining {
+                            Spacer()
+                            HStack(spacing: 3) {
+                                Image(systemName: "clock")
+                                    .font(.system(size: 9))
+                                Text(remaining)
+                                    .font(.system(size: 11, weight: .semibold))
                             }
-                        }
-                        if let scost = passenger.scostBreakdown {
-                            HStack(spacing: 4) {
-                                Image(systemName: "arrow.triangle.turn.up.right")
-                                    .font(.system(size: 11))
-                                    .foregroundColor(.brandOrange)
-                                Text(formatScostDistance(scost.walk))
-                                    .font(.system(size: 12, weight: .medium))
-                                    .foregroundColor(.textPrimary)
-                            }
-                            HStack(spacing: 4) {
-                                Image(systemName: "clock.fill")
-                                    .font(.system(size: 11))
-                                    .foregroundColor(.brand)
-                                Text(formatScostTime(scost.advance))
-                                    .font(.system(size: 12, weight: .medium))
-                                    .foregroundColor(.textPrimary)
-                            }
+                            .foregroundColor(countdownColor)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 3)
+                            .background(countdownColor.opacity(0.1))
+                            .clipShape(Capsule())
                         }
                     }
-                    .padding(.top, 4)
+                    Text("\(passenger.seatsBooked) seat\(passenger.seatsBooked > 1 ? "s" : "")")
+                        .font(.system(size: 11))
+                        .foregroundColor(.textTertiary)
+
+                    // Fare and scost breakdown information
+                    if passenger.fare != nil || passenger.scostBreakdown != nil {
+                        HStack(spacing: 12) {
+                            if let fare = passenger.fare {
+                                HStack(spacing: 4) {
+                                    Image(systemName: "dollarsign.circle.fill")
+                                        .font(.system(size: 11))
+                                        .foregroundColor(.brandGreen)
+                                    Text(String(format: "$%.2f", fare))
+                                        .font(.system(size: 12, weight: .medium))
+                                        .foregroundColor(.textPrimary)
+                                }
+                            }
+                            if let scost = passenger.scostBreakdown {
+                                HStack(spacing: 4) {
+                                    Image(systemName: "arrow.triangle.turn.up.right")
+                                        .font(.system(size: 11))
+                                        .foregroundColor(.brandOrange)
+                                    Text(formatScostDistance(scost.walk))
+                                        .font(.system(size: 12, weight: .medium))
+                                        .foregroundColor(.textPrimary)
+                                }
+                                HStack(spacing: 4) {
+                                    Image(systemName: "clock.fill")
+                                        .font(.system(size: 11))
+                                        .foregroundColor(.brand)
+                                    Text(formatScostTime(scost.advance))
+                                        .font(.system(size: 12, weight: .medium))
+                                        .foregroundColor(.textPrimary)
+                                }
+                            }
+                        }
+                        .padding(.top, 4)
+                    }
+
+                    // Payment status badge
+                    paymentBadge(for: passenger)
                 }
 
-                // Payment status badge
-                paymentBadge(for: passenger)
+                Spacer()
+
+                // Action buttons
+                HStack(spacing: 8) {
+                    Button(action: onChat) {
+                        Image(systemName: "message.fill")
+                            .font(.system(size: 16))
+                            .foregroundColor(.brand)
+                            .frame(width: 36, height: 36)
+                            .background(Color.brand.opacity(0.1))
+                            .clipShape(Circle())
+                    }
+                    .buttonStyle(.plain)
+
+                    Button(action: {
+                        Task {
+                            isRejecting = true
+                            await onReject()
+                            isRejecting = false
+                        }
+                    }) {
+                        if isRejecting {
+                            ProgressView()
+                                .frame(width: 36, height: 36)
+                        } else {
+                            Image(systemName: isLocked ? "lock.fill" : "xmark")
+                                .font(.system(size: 14, weight: .bold))
+                                .foregroundColor(isLocked ? .textTertiary : .brandRed)
+                                .frame(width: 36, height: 36)
+                                .background(isLocked ? Color.textTertiary.opacity(0.08) : Color.brandRed.opacity(0.1))
+                                .clipShape(Circle())
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(isRejecting || isLocked)
+
+                    Button(action: {
+                        Task {
+                            isApproving = true
+                            await onApprove()
+                            isApproving = false
+                        }
+                    }) {
+                        if isApproving {
+                            ProgressView()
+                                .frame(width: 36, height: 36)
+                        } else {
+                            Image(systemName: isLocked ? "lock.fill" : "checkmark")
+                                .font(.system(size: 14, weight: .bold))
+                                .foregroundColor(isLocked ? .textTertiary : .brandGreen)
+                                .frame(width: 36, height: 36)
+                                .background(isLocked ? Color.textTertiary.opacity(0.08) : Color.brandGreen.opacity(0.1))
+                                .clipShape(Circle())
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(isApproving || isLocked)
+                }
             }
+            .padding(14)
 
-            Spacer()
-
-            // Action buttons
-            HStack(spacing: 8) {
-                Button(action: onChat) {
-                    Image(systemName: "message.fill")
-                        .font(.system(size: 16))
+            if let pickup = passenger.pickupLocation {
+                Divider()
+                    .padding(.horizontal, 14)
+                HStack(alignment: .top, spacing: 8) {
+                    Image(systemName: "mappin.circle.fill")
                         .foregroundColor(.brand)
-                        .frame(width: 36, height: 36)
-                        .background(Color.brand.opacity(0.1))
-                        .clipShape(Circle())
-                }
-                .buttonStyle(.plain)
-
-                Button(action: {
-                    Task {
-                        isRejecting = true
-                        await onReject()
-                        isRejecting = false
-                    }
-                }) {
-                    if isRejecting {
-                        ProgressView()
-                            .frame(width: 36, height: 36)
+                        .font(.system(size: 14))
+                        .padding(.top, 1)
+                    if let address = pickup.address {
+                        Text(address)
+                            .font(.system(size: 13))
+                            .foregroundColor(.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
                     } else {
-                        Image(systemName: isLocked ? "lock.fill" : "xmark")
-                            .font(.system(size: 14, weight: .bold))
-                            .foregroundColor(isLocked ? .textTertiary : .brandRed)
-                            .frame(width: 36, height: 36)
-                            .background(isLocked ? Color.textTertiary.opacity(0.08) : Color.brandRed.opacity(0.1))
-                            .clipShape(Circle())
+                        Text("Lat: \(pickup.lat, specifier: "%.4f"), Lng: \(pickup.lng, specifier: "%.4f")")
+                            .font(.system(size: 13))
+                            .foregroundColor(.textSecondary)
                     }
+                    Spacer(minLength: 0)
                 }
-                .buttonStyle(.plain)
-                .disabled(isRejecting || isLocked)
-
-                Button(action: {
-                    Task {
-                        isApproving = true
-                        await onApprove()
-                        isApproving = false
-                    }
-                }) {
-                    if isApproving {
-                        ProgressView()
-                            .frame(width: 36, height: 36)
-                    } else {
-                        Image(systemName: isLocked ? "lock.fill" : "checkmark")
-                            .font(.system(size: 14, weight: .bold))
-                            .foregroundColor(isLocked ? .textTertiary : .brandGreen)
-                            .frame(width: 36, height: 36)
-                            .background(isLocked ? Color.textTertiary.opacity(0.08) : Color.brandGreen.opacity(0.1))
-                            .clipShape(Circle())
-                    }
-                }
-                .buttonStyle(.plain)
-                .disabled(isApproving || isLocked)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
             }
         }
-        .padding(14)
         .background(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .fill(Color.cardBackground)

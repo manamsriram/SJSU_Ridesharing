@@ -102,31 +102,31 @@ struct PassengerCard: View {
                         }
                         .padding(.top, 2)
                     }
-                }
 
-                // Payment status badge
-                let held = passenger.paymentIntentId != nil
-                VStack(alignment: .leading, spacing: 3) {
-                    HStack(spacing: 4) {
-                        Image(systemName: held ? "lock.shield.fill" : "clock.badge.exclamationmark.fill")
-                            .font(.system(size: 10))
-                        Text(held ? "Payment Held" : "Awaiting Payment")
-                            .font(.system(size: 11, weight: .semibold))
-                    }
-                    .foregroundColor(held ? .brandGreen : .brandGold)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background((held ? Color.brandGreen : Color.brandGold).opacity(0.12))
-                    .cornerRadius(8)
+                    // Payment status badge
+                    let held = passenger.paymentIntentId != nil
+                    VStack(alignment: .leading, spacing: 3) {
+                        HStack(spacing: 4) {
+                            Image(systemName: held ? "lock.shield.fill" : "clock.badge.exclamationmark.fill")
+                                .font(.system(size: 10))
+                            Text(held ? "Payment Held" : "Awaiting Payment")
+                                .font(.system(size: 11, weight: .semibold))
+                        }
+                        .foregroundColor(held ? .brandGreen : .brandGold)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background((held ? Color.brandGreen : Color.brandGold).opacity(0.12))
+                        .cornerRadius(8)
 
-                    if !held, let deadline = passenger.paymentDeadlineAt {
-                        Text("Due by \(formatPassengerDeadline(deadline))")
-                            .font(.system(size: 10))
-                            .foregroundColor(.brandOrange)
-                            .padding(.horizontal, 4)
+                        if !held, let deadline = passenger.paymentDeadlineAt {
+                            Text("Due by \(formatPassengerDeadline(deadline))")
+                                .font(.system(size: 10))
+                                .foregroundColor(.brandOrange)
+                                .padding(.horizontal, 4)
+                        }
                     }
+                    .padding(.top, 2)
                 }
-                .padding(.top, 2)
 
                 Spacer()
 
