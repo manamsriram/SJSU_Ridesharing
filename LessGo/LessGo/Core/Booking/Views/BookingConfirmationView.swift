@@ -1018,7 +1018,8 @@ private struct DriverTripGroupRow: View {
         bookings.filter { $0.bookingState == .approved }.count
     }
     private var riderNames: String {
-        bookings.compactMap { $0.rider?.name.components(separatedBy: " ").first }
+        bookings.filter { $0.bookingState != .cancelled && $0.bookingState != .rejected }
+                .compactMap { $0.rider?.name.components(separatedBy: " ").first }
                 .joined(separator: ", ")
     }
 
