@@ -442,10 +442,10 @@ private struct Step1LocationView: View {
             .padding(.horizontal, AppConstants.pagePadding)
         }
         .animation(.spring(response: 0.3, dampingFraction: 0.8), value: vm.userLocation)
-        .onChange(of: vm.userLocation) { query in
+        .onChange(of: vm.userLocation) { _, query in
             locationSearch.update(query: query)
         }
-        .onChange(of: vm.tripDirection) { _ in
+        .onChange(of: vm.tripDirection) {
             locationSearch.clear()
         }
     }

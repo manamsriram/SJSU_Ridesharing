@@ -113,7 +113,7 @@ struct DriverHomeView: View {
             .task {
                 await refreshDashboardData()
             }
-            .onChange(of: authVM.currentUser?.id) { _ in
+            .onChange(of: authVM.currentUser?.id) {
                 Task { await refreshDashboardData() }
             }
             .sheet(isPresented: $showAccountMenu) {
@@ -148,7 +148,7 @@ struct DriverHomeView: View {
                 )
                 .environmentObject(authVM)
             }
-            .onChange(of: showNotifications) { isPresented in
+            .onChange(of: showNotifications) { _, isPresented in
                 if !isPresented { Task { await refreshNotificationBadge() } }
             }
             .onReceive(NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)) { _ in

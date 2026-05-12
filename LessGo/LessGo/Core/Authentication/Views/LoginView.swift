@@ -56,7 +56,7 @@ struct LoginView: View {
                             errorMessage: emailError
                         )
                         .focused($focusedField, equals: .email)
-                        .onChange(of: email) { _ in emailError = nil }
+                        .onChange(of: email) { emailError = nil }
                         .submitLabel(.next)
                         .onSubmit { focusedField = .password }
 
@@ -69,7 +69,7 @@ struct LoginView: View {
                             errorMessage: passwordError
                         )
                         .focused($focusedField, equals: .password)
-                        .onChange(of: password) { _ in passwordError = nil }
+                        .onChange(of: password) { passwordError = nil }
                         .submitLabel(.go)
                         .onSubmit { attemptLogin() }
 
@@ -167,7 +167,7 @@ struct LoginView: View {
                     }
                 }
             }
-            .onChange(of: authVM.isAuthenticated) { loggedIn in
+            .onChange(of: authVM.isAuthenticated) { _, loggedIn in
                 if loggedIn { dismiss() }
             }
             .onAppear {

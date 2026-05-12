@@ -18,11 +18,10 @@ struct RiderHomeView: View {
     @StateObject private var requestVM = TripRequestViewModel()
     @StateObject private var locationManager = LocationManager.shared
 
-    @State private var region = MKCoordinateRegion(
+    @State private var position: MapCameraPosition = .userLocation(fallback: .region(MKCoordinateRegion(
         center: LocationManager.shared.currentLocation?.coordinate ?? AppConstants.sjsuCoordinate,
         span: MKCoordinateSpan(latitudeDelta: 0.015, longitudeDelta: 0.015)
-    )
-    @State private var trackingMode: MapUserTrackingMode = .follow
+    )))
     @State private var hasInitiallyCentered = LocationManager.shared.currentLocation != nil
     @State private var showAccountMenu = false
     @State private var showNotifications = false
@@ -71,12 +70,9 @@ struct RiderHomeView: View {
                     // Map constrained to upper half
                     VStack(spacing: 0) {
                         ZStack {
-                            Map(
-                                coordinateRegion: $region,
-                                interactionModes: .all,
-                                showsUserLocation: true,
-                                userTrackingMode: $trackingMode
-                            )
+                            Map(position: $position) {
+                                UserAnnotation()
+                            }
 
                             // Locate me button
                             VStack {
@@ -86,7 +82,6 @@ struct RiderHomeView: View {
                                     Button(action: {
                                         if let coord = locationManager.currentLocation?.coordinate {
                                             centerMap(on: coord)
-                                            trackingMode = .follow
                                         }
                                     }) {
                                         ZStack {
@@ -188,7 +183,7 @@ struct RiderHomeView: View {
                     }
                 }
             }
-            .onChange(of: requestVM.state) { newState in
+            .onChange(of: requestVM.state) { _, newState in
                 switch newState {
                 case .searching:
                     showFinding = true
@@ -205,7 +200,7 @@ struct RiderHomeView: View {
                     break
                 }
             }
-            .onChange(of: locationManager.currentLocation) { newLocation in
+            .onChange(of: locationManager.currentLocation) { _, newLocation in
                 guard !hasInitiallyCentered, let coord = newLocation?.coordinate else { return }
                 hasInitiallyCentered = true
                 centerMap(on: coord)
@@ -213,7 +208,7 @@ struct RiderHomeView: View {
             .onReceive(NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)) { _ in
                 Task { await refreshNotificationBadge() }
             }
-            .onChange(of: showNotifications) { isPresented in
+            .onChange(of: showNotifications) { _, isPresented in
                 if !isPresented { Task { await refreshNotificationBadge() } }
             }
             .onAppear {
@@ -660,7 +655,7 @@ struct RiderHomeView: View {
                 .foregroundColor(.textPrimary)
                 .focused($editableFieldFocused)
                 .autocorrectionDisabled()
-                .onChange(of: editableQuery) { value in
+                .onChange(of: editableQuery) { _, value in
                     scheduleSearch(value)
                 }
             if !editableQuery.isEmpty {
@@ -804,10 +799,10 @@ struct RiderHomeView: View {
 
     private func centerMap(on coordinate: CLLocationCoordinate2D) {
         withAnimation(.spring(response: 0.45, dampingFraction: 0.8)) {
-            region = MKCoordinateRegion(
+            position = .region(MKCoordinateRegion(
                 center: coordinate,
                 span: MKCoordinateSpan(latitudeDelta: 0.015, longitudeDelta: 0.015)
-            )
+            ))
         }
     }
 

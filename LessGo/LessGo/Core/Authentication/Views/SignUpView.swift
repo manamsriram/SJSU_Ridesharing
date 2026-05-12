@@ -73,7 +73,7 @@ struct SignUpView: View {
                             errorMessage: nameError
                         )
                         .focused($focusedField, equals: .name)
-                        .onChange(of: name) { _ in nameError = nil }
+                        .onChange(of: name) { nameError = nil }
                         .submitLabel(.next)
                         .onSubmit { focusedField = .email }
 
@@ -86,7 +86,7 @@ struct SignUpView: View {
                             errorMessage: emailError
                         )
                         .focused($focusedField, equals: .email)
-                        .onChange(of: email) { _ in emailError = nil }
+                        .onChange(of: email) { emailError = nil }
                         .submitLabel(.next)
                         .onSubmit { focusedField = .password }
 
@@ -99,7 +99,7 @@ struct SignUpView: View {
                             errorMessage: passwordError
                         )
                         .focused($focusedField, equals: .password)
-                        .onChange(of: password) { _ in passwordError = nil }
+                        .onChange(of: password) { passwordError = nil }
                         .submitLabel(.next)
                         .onSubmit { focusedField = .confirm }
 
@@ -112,7 +112,7 @@ struct SignUpView: View {
                             errorMessage: confirmError
                         )
                         .focused($focusedField, equals: .confirm)
-                        .onChange(of: confirm) { _ in confirmError = nil }
+                        .onChange(of: confirm) { confirmError = nil }
                         .submitLabel(.go)
                         .onSubmit { attemptRegister() }
 
@@ -194,7 +194,7 @@ struct SignUpView: View {
                     }
                 }
             }
-            .onChange(of: authVM.isAuthenticated) { loggedIn in
+            .onChange(of: authVM.isAuthenticated) { _, loggedIn in
                 if loggedIn {
                     dismiss()
                     // Prompt ID verification after small delay

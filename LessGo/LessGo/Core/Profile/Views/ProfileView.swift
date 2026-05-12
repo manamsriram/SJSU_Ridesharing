@@ -270,7 +270,7 @@ struct ProfileView: View {
                 }
             )
         )
-        .onChange(of: selectedProfileImage) { newImage in
+        .onChange(of: selectedProfileImage) { _, newImage in
             if let image = newImage, let userId = authVM.currentUser?.id {
                 Task {
                     await vm.uploadProfilePicture(userId: userId, image: image)
@@ -2241,7 +2241,7 @@ class DevToolsViewModel: ObservableObject {
             let driverIdRaw = (driverRegData["user"] as? [String: Any])?["user_id"] as? String
                            ?? (driverRegData["user_id"] as? String)
                            ?? ""
-            let driverTokenRaw = driverRegData["access_token"] as? String ?? ""
+            let _ = driverRegData["access_token"] as? String ?? ""
             guard !driverIdRaw.isEmpty else {
                 log("Error: Driver registration failed — \(driverReg["message"] as? String ?? "unknown")")
                 fullTripRunning = false; return

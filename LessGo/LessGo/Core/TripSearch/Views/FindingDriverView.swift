@@ -43,7 +43,7 @@ struct FindingDriverView: View {
         .onReceive(dotTimer) { _ in
             dotCount = (dotCount + 1) % 4
         }
-        .onChange(of: viewModel.state) { newState in
+        .onChange(of: viewModel.state) { _, newState in
             if case .failed = newState {
                 // Auto-dismiss after 2 s on failure so user can retry
                 Task {

@@ -328,7 +328,7 @@ struct CompactTripCard: View {
         .shadow(color: .black.opacity(0.06), radius: 10, x: 0, y: 4)
         .task(id: trip.id) { await loadPassengers(force: true) }
         .onAppear { Task { await loadPassengers(force: true) } }
-        .onChange(of: trip.seatsAvailable) { _ in
+        .onChange(of: trip.seatsAvailable) {
             Task { await loadPassengers(force: true) }
         }
         .onReceive(NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)) { _ in

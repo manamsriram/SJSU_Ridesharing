@@ -193,7 +193,7 @@ struct BookingConfirmationView: View {
                 }
             }
         }
-        .onChange(of: bookingVM.showSuccess) { success in
+        .onChange(of: bookingVM.showSuccess) { _, success in
             if success { withAnimation { showSuccess = true } }
         }
         .animation(.spring(response: 0.45, dampingFraction: 0.75), value: showSuccess)
@@ -535,7 +535,7 @@ struct BookingListView: View {
     }
 
     var body: some View {
-        NavigationView {
+        NavigationStack {
             VStack(spacing: 0) {
                 bookingsHeader
 
@@ -626,13 +626,13 @@ struct BookingListView: View {
                 refreshTimer?.invalidate()
                 refreshTimer = nil
             }
-            .onChange(of: showAsDriver) { _ in
+            .onChange(of: showAsDriver) {
                 Task { await refreshCurrentTab() }
             }
-            .onChange(of: driverTab) { _ in
+            .onChange(of: driverTab) {
                 Task { await refreshCurrentTab() }
             }
-            .onChange(of: authVM.currentUser?.id) { _ in
+            .onChange(of: authVM.currentUser?.id) {
                 Task {
                     showAsDriver = authVM.isDriver
                     await refreshCurrentTab()
@@ -651,20 +651,14 @@ struct BookingListView: View {
             .sheet(item: $editingTrip) { trip in
                 EditPostedTripSheet(trip: trip, vm: vm)
             }
-            .background(
-                NavigationLink(
-                    destination: Group {
-                        if let booking = deepLinkedBooking {
-                            BookingRideDetailView(booking: booking, vm: vm, showAsDriver: false)
-                        }
-                    },
-                    isActive: Binding(
-                        get: { deepLinkedBooking != nil },
-                        set: { if !$0 { deepLinkedBooking = nil } }
-                    )
-                ) { EmptyView() }
-                .hidden()
-            )
+            .navigationDestination(isPresented: Binding(
+                get: { deepLinkedBooking != nil },
+                set: { if !$0 { deepLinkedBooking = nil } }
+            )) {
+                if let booking = deepLinkedBooking {
+                    BookingRideDetailView(booking: booking, vm: vm, showAsDriver: false)
+                }
+            }
             .onReceive(NotificationCenter.default.publisher(for: .openBookingDetail)) { notification in
                 guard let bookingId = notification.userInfo?["bookingId"] as? String else { return }
                 // Wait briefly to allow the tab switch animation to complete, then reload and open

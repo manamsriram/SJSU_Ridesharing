@@ -28,7 +28,7 @@ struct LessGoApp: App {
                     appDelegate.authVM = authVM
                     applyGlobalAppearance()
                 }
-                .onChange(of: appAppearanceRawValue) { _ in
+                .onChange(of: appAppearanceRawValue) {
                     applyGlobalAppearance()
                 }
         }

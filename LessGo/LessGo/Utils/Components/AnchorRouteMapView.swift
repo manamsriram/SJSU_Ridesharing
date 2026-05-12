@@ -24,6 +24,10 @@ struct AnchorRouteMapView: UIViewRepresentable {
     var frequentRoutes: [FrequentRouteSegment] = []
     // When set, only show pickup/dropoff pins for this rider (hides other riders' locations)
     var ownRiderId: String? = nil
+    // Remaining simulation path — shown during active simulation as a lookahead trail
+    var simulationPath: [CLLocationCoordinate2D] = []
+    // Pickup pin shown during the enRoute leg of a simulation
+    var simulationPickup: CLLocationCoordinate2D? = nil
 
     func makeCoordinator() -> Coordinator {
         Coordinator()
@@ -62,7 +66,8 @@ struct AnchorRouteMapView: UIViewRepresentable {
             destination: destination,
             driver: driver,
             anchors: anchorPoints,
-            ownRiderId: ownRiderId
+            ownRiderId: ownRiderId,
+            simulationPickup: simulationPickup
         )
         context.coordinator.updateAnchorRoute(
             origin: origin,
@@ -71,6 +76,7 @@ struct AnchorRouteMapView: UIViewRepresentable {
             mapView: mapView
         )
         context.coordinator.updateFrequentRoutes(frequentRoutes, mapView: mapView)
+        context.coordinator.updateSimulationPath(simulationPath, mapView: mapView)
         context.coordinator.fitToContent(mapView, origin: origin, destination: destination, anchors: anchorPoints)
     }
 
@@ -81,8 +87,10 @@ struct AnchorRouteMapView: UIViewRepresentable {
         private var annotationsByID: [String: MKPointAnnotation] = [:]
         private var routeOverlays: [MKOverlay] = []
         private var frequentRouteOverlays: [MKOverlay] = []
+        private var simulationPathOverlay: MKPolyline?
         private var lastAnchorKey: String = ""
         private var lastFrequentRouteKey: String = ""
+        private var lastSimPathKey: String = ""
         private var pendingDirections: [MKDirections] = []
         private var pendingLayoutRetry = false
 
@@ -104,7 +112,8 @@ struct AnchorRouteMapView: UIViewRepresentable {
             destination: CLLocationCoordinate2D?,
             driver: CLLocationCoordinate2D?,
             anchors: [AnchorPoint],
-            ownRiderId: String? = nil
+            ownRiderId: String? = nil,
+            simulationPickup: CLLocationCoordinate2D? = nil
         ) {
             guard let mapView else { return }
 
@@ -112,6 +121,7 @@ struct AnchorRouteMapView: UIViewRepresentable {
             if let origin      { desired["origin"]      = (origin,      "pickup") }
             if let destination { desired["destination"] = (destination, "destination") }
             if let driver      { desired["driver"]      = (driver,      "driver") }
+            if let simulationPickup { desired["sim_pickup"] = (simulationPickup, "sim_pickup") }
 
             for (i, anchor) in anchors.enumerated() {
                 // If ownRiderId is set, only pin this rider's own stop (polyline still uses all anchors)
@@ -268,6 +278,24 @@ struct AnchorRouteMapView: UIViewRepresentable {
             }
         }
 
+        // MARK: Simulation Path
+
+        func updateSimulationPath(_ path: [CLLocationCoordinate2D], mapView: MKMapView) {
+            let key = path.isEmpty ? "" : "\(path.count)|\(path[0].latitude)"
+            guard key != lastSimPathKey else { return }
+            lastSimPathKey = key
+
+            if let existing = simulationPathOverlay {
+                mapView.removeOverlay(existing)
+                simulationPathOverlay = nil
+            }
+            guard path.count >= 2 else { return }
+            var coords = path
+            let overlay = SimulationPathPolyline(coordinates: &coords, count: coords.count)
+            mapView.addOverlay(overlay, level: .aboveRoads)
+            simulationPathOverlay = overlay
+        }
+
         // MARK: Fit
 
         func fitToContent(
@@ -310,6 +338,14 @@ struct AnchorRouteMapView: UIViewRepresentable {
         // MARK: Delegate
 
         func mapView(_ mapView: MKMapView, rendererFor overlay: MKOverlay) -> MKOverlayRenderer {
+            if let sim = overlay as? SimulationPathPolyline {
+                let renderer = MKPolylineRenderer(polyline: sim)
+                renderer.strokeColor = UIColor.systemTeal.withAlphaComponent(0.75)
+                renderer.lineWidth = 3
+                renderer.lineDashPattern = [6, 5]
+                renderer.lineCap = .round
+                return renderer
+            }
             if let frequent = overlay as? FrequentRoutePolyline {
                 let renderer = MKPolylineRenderer(polyline: frequent)
                 renderer.strokeColor = UIColor(red: 0, green: 0.33, blue: 0.63, alpha: 1) // #0055A2 SJSU dark blue
@@ -359,6 +395,9 @@ struct AnchorRouteMapView: UIViewRepresentable {
             case "driver":
                 view.markerTintColor = UIColor(Color.brand)
                 view.glyphImage = UIImage(systemName: "car.fill")
+            case "sim_pickup":
+                view.markerTintColor = UIColor.systemTeal
+                view.glyphImage = UIImage(systemName: "figure.wave")
             case "anchor_pickup":
                 view.markerTintColor = UIColor(Color.brand.opacity(0.8))
                 view.glyphImage = UIImage(systemName: "circle.fill")
@@ -379,6 +418,11 @@ struct AnchorRouteMapView: UIViewRepresentable {
 // and apply the dashed stroke style for detour segments.
 
 final class DashedPolyline: MKPolyline {}
+
+// MARK: - SimulationPathPolyline
+// Lookahead path shown during active simulation runs.
+
+final class SimulationPathPolyline: MKPolyline {}
 
 // MARK: - FrequentRoutePolyline
 // Subclass of MKPolyline used to render He et al. frequent route segments

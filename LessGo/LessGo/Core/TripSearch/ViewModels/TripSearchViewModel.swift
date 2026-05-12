@@ -128,11 +128,11 @@ class TripSearchViewModel: ObservableObject {
     // trips is simpler and more reliable than a geospatial search with a fixed
     // radius (which misses Bay Area hubs 30–70 km from campus).
     // Client-side direction + text filtering in `filteredTrips` handles the rest.
-    func searchNearby(radiusMeters: Int = AppConstants.defaultSearchRadiusMeters) async {
+    func searchNearby(radiusMeters: Int = 8_000) async {
         await loadAllUpcoming()
     }
 
-    func search(lat: Double, lng: Double, radius: Int = AppConstants.defaultSearchRadiusMeters) async {
+    func search(lat: Double, lng: Double, radius: Int = 8_000) async {
         isLoading = true
         errorMessage = nil
         defer { isLoading = false }

@@ -111,7 +111,7 @@ struct ProfileImagePickerView: View {
             .sheet(isPresented: $showPhotoLibrary) {
                 ImagePicker(image: $selectedImage, sourceType: .photoLibrary)
             }
-            .onChange(of: showPicker) { newValue in
+            .onChange(of: showPicker) { _, newValue in
                 if newValue {
                     showActionSheet = true
                     showPicker = false

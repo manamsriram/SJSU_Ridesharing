@@ -55,7 +55,7 @@ struct ChatView: View {
                 .onAppear {
                     scrollToBottom(proxy: proxy)
                 }
-                .onChange(of: messages.count) { _ in
+                .onChange(of: messages.count) {
                     scrollToBottom(proxy: proxy)
                 }
             }
@@ -355,7 +355,7 @@ struct ChatView: View {
         pollTimer = nil
     }
 
-    private func deduplicatedMessages(_ items: [Message]) -> [Message] {
+    private nonisolated func deduplicatedMessages(_ items: [Message]) -> [Message] {
         var seen = Set<String>()
         return items
             .sorted { $0.createdAt < $1.createdAt }

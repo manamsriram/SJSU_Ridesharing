@@ -39,7 +39,7 @@ struct TripRequestView: View {
                         .environmentObject(authVM)
                 }
             }
-            .onChange(of: viewModel.state) { newState in
+            .onChange(of: viewModel.state) { _, newState in
                 switch newState {
                 case .searching:
                     showFinding = true
@@ -59,7 +59,7 @@ struct TripRequestView: View {
             locationManager.startLocationUpdates()
             prefillOriginFromCurrentLocation()
         }
-        .onChange(of: locationManager.currentLocation) { _ in
+        .onChange(of: locationManager.currentLocation) {
             prefillOriginFromCurrentLocation()
         }
     }

@@ -166,11 +166,11 @@ struct MatchedRideView: View {
         .onReceive(chatPollTimer) { _ in
             Task { await refreshChatUnread() }
         }
-        .onChange(of: locationService.driverLocation?.latitude) { _ in
+        .onChange(of: locationService.driverLocation?.latitude) {
             checkDriverArrival()
             interpolateDriverCoordinate()
         }
-        .onChange(of: locationService.driverLocation?.longitude) { _ in
+        .onChange(of: locationService.driverLocation?.longitude) {
             checkDriverArrival()
             interpolateDriverCoordinate()
         }

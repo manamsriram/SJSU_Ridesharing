@@ -17,6 +17,8 @@ struct RouteMapView: UIViewRepresentable {
     var fitAnchors: [CLLocationCoordinate2D]? = nil
     var showsUserLocation: Bool = true
     var onRouteUpdated: ((RouteMapInfo?) -> Void)? = nil
+    var simulationPath: [CLLocationCoordinate2D] = []
+    var simulationPickup: CLLocationCoordinate2D? = nil
 
     func makeCoordinator() -> Coordinator {
         Coordinator()
@@ -55,7 +57,8 @@ struct RouteMapView: UIViewRepresentable {
             origin: origin,
             destination: destination,
             driver: driver,
-            riders: riders
+            riders: riders,
+            simulationPickup: simulationPickup
         )
 
         let routeFrom = routeStart ?? origin
@@ -67,6 +70,8 @@ struct RouteMapView: UIViewRepresentable {
                 context.coordinator.updateRoute(from: routeFrom, to: routeTo)
             }
         }
+
+        context.coordinator.updateSimulationPath(simulationPath, mapView: mapView)
 
         context.coordinator.fitVisibleRegionIfNeeded(
             mapView,
@@ -105,6 +110,8 @@ struct RouteMapView: UIViewRepresentable {
         private var lastDirectionsDestination: CLLocationCoordinate2D?
         private var annotationsByID: [String: MovingPointAnnotation] = [:]
         private var pendingLayoutRetry = false
+        private var simulationPathOverlay: MKPolyline?
+        private var lastSimPathKey: String = ""
 
         func scheduleLayoutRetry(_ retry: @escaping () -> Void) {
             guard !pendingLayoutRetry else { return }
@@ -120,7 +127,8 @@ struct RouteMapView: UIViewRepresentable {
             origin: CLLocationCoordinate2D?,
             destination: CLLocationCoordinate2D?,
             driver: CLLocationCoordinate2D?,
-            riders: [CLLocationCoordinate2D]
+            riders: [CLLocationCoordinate2D],
+            simulationPickup: CLLocationCoordinate2D? = nil
         ) {
             guard let mapView else { return }
 
@@ -131,6 +139,7 @@ struct RouteMapView: UIViewRepresentable {
             for (idx, rider) in riders.enumerated() {
                 next["rider_\(idx)"] = (rider, "rider")
             }
+            if let simulationPickup { next["sim_pickup"] = (simulationPickup, "sim_pickup") }
 
             let removedKeys = Set(annotationsByID.keys).subtracting(next.keys)
             for key in removedKeys {
@@ -284,13 +293,29 @@ struct RouteMapView: UIViewRepresentable {
 
             let destinationDelta = CLLocation(latitude: lastDestination.latitude, longitude: lastDestination.longitude)
                 .distance(from: CLLocation(latitude: destination.latitude, longitude: destination.longitude))
-            let originDelta = CLLocation(latitude: lastOrigin.latitude, longitude: lastOrigin.longitude)
+            let _ = CLLocation(latitude: lastOrigin.latitude, longitude: lastOrigin.longitude)
                 .distance(from: CLLocation(latitude: origin.latitude, longitude: origin.longitude))
-            let requestAge = Date().timeIntervalSince(lastAt)
+            let _ = Date().timeIntervalSince(lastAt)
 
             // Only reroute if the destination changed materially. Driver moving along a fixed route doesn't need a new request.
             if destinationDelta > 25 { return false }
             return true
+        }
+
+        func updateSimulationPath(_ path: [CLLocationCoordinate2D], mapView: MKMapView) {
+            let key = path.isEmpty ? "" : "\(path.count)|\(path[0].latitude)"
+            guard key != lastSimPathKey else { return }
+            lastSimPathKey = key
+
+            if let existing = simulationPathOverlay {
+                mapView.removeOverlay(existing)
+                simulationPathOverlay = nil
+            }
+            guard path.count >= 2 else { return }
+            var coords = path
+            let overlay = SimulationPathPolyline(coordinates: &coords, count: coords.count)
+            mapView.addOverlay(overlay, level: .aboveRoads)
+            simulationPathOverlay = overlay
         }
 
         func fitVisibleRegionIfNeeded(_ mapView: MKMapView, coordinates: [CLLocationCoordinate2D]) {
@@ -340,6 +365,14 @@ struct RouteMapView: UIViewRepresentable {
         }
 
         func mapView(_ mapView: MKMapView, rendererFor overlay: MKOverlay) -> MKOverlayRenderer {
+            if let sim = overlay as? SimulationPathPolyline {
+                let renderer = MKPolylineRenderer(polyline: sim)
+                renderer.strokeColor = UIColor.systemTeal.withAlphaComponent(0.75)
+                renderer.lineWidth = 3
+                renderer.lineDashPattern = [6, 5]
+                renderer.lineCap = .round
+                return renderer
+            }
             if let polyline = overlay as? MKPolyline {
                 let renderer = MKPolylineRenderer(polyline: polyline)
                 renderer.strokeColor = UIColor(Color.brand)
@@ -378,6 +411,9 @@ struct RouteMapView: UIViewRepresentable {
             case "rider":
                 view.markerTintColor = UIColor(Color.brandRed)
                 view.glyphImage = UIImage(systemName: "figure.walk")
+            case "sim_pickup":
+                view.markerTintColor = UIColor.systemTeal
+                view.glyphImage = UIImage(systemName: "figure.wave")
             default:
                 view.markerTintColor = .systemBlue
                 view.glyphImage = UIImage(systemName: "mappin")

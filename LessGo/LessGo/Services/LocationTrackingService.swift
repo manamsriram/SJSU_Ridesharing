@@ -11,21 +11,27 @@ class LocationTrackingService: NSObject, ObservableObject {
     @Published var currentLocation: CLLocation?
     @Published var driverLocation: DriverLocation?
     @Published var isTracking = false
+    /// Remaining route ahead during simulation — used to draw the lookahead path overlay on the map.
+    @Published var simulationRemainingPath: [CLLocationCoordinate2D] = []
     var isSimulatingMovement: Bool { isSimulating }
 
     private let locationManager = CLLocationManager()
     private let network = NetworkManager.shared
     private var trackingTimer: Timer?
     private var driverPollingTimer: Timer?
-    private var simulationTimer: Timer?
     private var currentTripId: String?
 
-    // Simulated movement for testing
+    // Simulated movement
     private var simulatedRoute: [CLLocationCoordinate2D] = []
     private var simulationIndex = 0
     private var isSimulating = false
     private var simulationSendsToBackend = true
     private var simulationUpdatesDriverFeedOnly = false
+
+    // CADisplayLink-based smooth interpolation
+    private var displayLink: CADisplayLink?
+    private var simulationStepStartTime: CFTimeInterval = 0
+    private var simulationStepDuration: TimeInterval = 0.22
 
     override private init() {
         super.init()
@@ -166,11 +172,7 @@ class LocationTrackingService: NSObject, ObservableObject {
         stepInterval: TimeInterval = 0.35,
         steps: Int = 90
     ) {
-        if isSimulating {
-            simulationTimer?.invalidate()
-            simulationTimer = nil
-            isSimulating = false
-        }
+        stopSimulatedMovement()
 
         currentTripId = tripId
         isSimulating = true
@@ -178,6 +180,7 @@ class LocationTrackingService: NSObject, ObservableObject {
         simulationIndex = 0
         simulationSendsToBackend = sendToBackend
         simulationUpdatesDriverFeedOnly = updateDriverFeedOnly
+        simulationStepDuration = stepInterval
 
         Task { @MainActor [weak self] in
             guard let self else { return }
@@ -185,14 +188,20 @@ class LocationTrackingService: NSObject, ObservableObject {
             let routePoints = await self.generateRoutedPoints(from: start, to: end, fallbackSteps: max(12, steps))
             self.simulatedRoute = routePoints
             self.simulationIndex = 0
+            self.simulationRemainingPath = routePoints
+            self.simulationStepStartTime = CACurrentMediaTime()
+            self.startDisplayLink()
 
-            self.simulationTimer?.invalidate()
-            self.simulationTimer = Timer.scheduledTimer(withTimeInterval: stepInterval, repeats: true) { [weak self] _ in
-                self?.moveToNextSimulatedPoint()
-            }
-
-            print("🎮 Started simulated movement from \(start) to \(end) with \(routePoints.count) points")
+            print("🎮 Started simulated movement: \(routePoints.count) points, \(stepInterval)s/step")
         }
+    }
+
+    private func startDisplayLink() {
+        displayLink?.invalidate()
+        let link = CADisplayLink(target: self, selector: #selector(displayLinkTick))
+        link.preferredFramesPerSecond = 30
+        link.add(to: .main, forMode: .common)
+        displayLink = link
     }
 
     func stopSimulatedMovement() {
@@ -205,38 +214,51 @@ class LocationTrackingService: NSObject, ObservableObject {
         simulationIndex = 0
         simulationSendsToBackend = true
         simulationUpdatesDriverFeedOnly = false
+        simulationRemainingPath = []
 
-        simulationTimer?.invalidate()
-        simulationTimer = nil
+        displayLink?.invalidate()
+        displayLink = nil
 
         print("🎮 Stopped simulated movement")
     }
 
-    private func moveToNextSimulatedPoint() {
+    @objc private func displayLinkTick() {
+        guard isSimulating, !simulatedRoute.isEmpty else {
+            stopSimulatedMovement()
+            return
+        }
         guard simulationIndex < simulatedRoute.count else {
             stopSimulatedMovement()
             return
         }
 
-        let coordinate = simulatedRoute[simulationIndex]
+        let now = CACurrentMediaTime()
+        let elapsed = now - simulationStepStartTime
+        let t = elapsed / simulationStepDuration
 
-        // Create simulated location
-        let location = CLLocation(
-            coordinate: coordinate,
+        let from = simulationIndex == 0 ? simulatedRoute[0] : simulatedRoute[simulationIndex - 1]
+        let to = simulatedRoute[simulationIndex]
+
+        let clamped = min(t, 1.0)
+        let lat = from.latitude + (to.latitude - from.latitude) * clamped
+        let lng = from.longitude + (to.longitude - from.longitude) * clamped
+        let interpolated = CLLocationCoordinate2D(latitude: lat, longitude: lng)
+
+        currentLocation = CLLocation(
+            coordinate: interpolated,
             altitude: 0,
             horizontalAccuracy: 5,
             verticalAccuracy: 5,
             timestamp: Date()
         )
 
-        currentLocation = location
         if simulationUpdatesDriverFeedOnly, let tripId = currentTripId {
             driverLocation = DriverLocation(
                 locationId: "sim_\(simulationIndex)",
                 tripId: tripId,
                 driverId: "simulated_driver",
-                latitude: coordinate.latitude,
-                longitude: coordinate.longitude,
+                latitude: interpolated.latitude,
+                longitude: interpolated.longitude,
                 heading: nil,
                 speed: 28.0,
                 accuracy: 5.0,
@@ -244,33 +266,39 @@ class LocationTrackingService: NSObject, ObservableObject {
             )
         }
 
-        // Send to backend
+        guard t >= 1.0 else { return }
+
         if simulationSendsToBackend, let tripId = currentTripId {
-            Task {
-                do {
-                    let request = LocationUpdateRequest(
-                        latitude: coordinate.latitude,
-                        longitude: coordinate.longitude,
-                        heading: nil,
-                        speed: 32.0, // km/h simulated speed
-                        accuracy: 5.0
-                    )
+            sendSimulatedLocation(coordinate: to, tripId: tripId)
+        }
+        simulationIndex += 1
+        // Carry over any excess time so steps don't drift
+        simulationStepStartTime = now - max(0, elapsed - simulationStepDuration)
+        simulationRemainingPath = simulationIndex < simulatedRoute.count
+            ? Array(simulatedRoute[simulationIndex...])
+            : []
+    }
 
-                    let _: EmptyResponse = try await network.request(
-                        endpoint: "/trips/\(tripId)/location",
-                        method: .post,
-                        body: request,
-                        requiresAuth: true
-                    )
-
-                    print("🎮 Simulated location sent: \(coordinate.latitude), \(coordinate.longitude)")
-                } catch {
-                    print("❌ Failed to send simulated location: \(error)")
-                }
+    private func sendSimulatedLocation(coordinate: CLLocationCoordinate2D, tripId: String) {
+        Task {
+            do {
+                let request = LocationUpdateRequest(
+                    latitude: coordinate.latitude,
+                    longitude: coordinate.longitude,
+                    heading: nil,
+                    speed: 32.0,
+                    accuracy: 5.0
+                )
+                let _: EmptyResponse = try await network.request(
+                    endpoint: "/trips/\(tripId)/location",
+                    method: .post,
+                    body: request,
+                    requiresAuth: true
+                )
+            } catch {
+                print("❌ Failed to send simulated location: \(error)")
             }
         }
-
-        simulationIndex += 1
     }
 
     private func generateRoutePoints(from start: CLLocationCoordinate2D, to end: CLLocationCoordinate2D, steps: Int) -> [CLLocationCoordinate2D] {

@@ -40,6 +40,7 @@ struct ActiveTripView: View {
     @State private var lastSentRiderPickupCoordinate: CLLocationCoordinate2D?
     @State private var isSimulatingRiderMovement = false
     @State private var riderSimulationTask: Task<Void, Never>?
+    @State private var simulationPickupCoord: CLLocationCoordinate2D? = nil
     @State private var anchorPoints: [AnchorPoint] = []
     @State private var frequentRoutes: [FrequentRouteSegment] = []
     @State private var settlement: TripSettlement?
@@ -60,7 +61,7 @@ struct ActiveTripView: View {
         GeometryReader { geo in
             let expandedHeight: CGFloat = min(max(360, geo.size.height * 0.58), 560)
             let collapsedHeight: CGFloat = 90
-            let cardHeight = cardCollapsed ? collapsedHeight : expandedHeight
+            let _ = cardCollapsed ? collapsedHeight : expandedHeight
 
             ZStack(alignment: .bottom) {
                 // Map
@@ -132,19 +133,19 @@ struct ActiveTripView: View {
         .onDisappear {
             stopTracking()
         }
-        .onChange(of: locationService.currentLocation?.coordinate.latitude) { _ in
+        .onChange(of: locationService.currentLocation?.coordinate.latitude) {
             if isDriver { refreshDriverApproachMetrics() }
         }
-        .onChange(of: locationService.currentLocation?.coordinate.longitude) { _ in
+        .onChange(of: locationService.currentLocation?.coordinate.longitude) {
             if isDriver { refreshDriverApproachMetrics() }
         }
-        .onChange(of: locationService.driverLocation?.latitude) { _ in
+        .onChange(of: locationService.driverLocation?.latitude) {
             if !isDriver { refreshDriverApproachMetrics() }
         }
-        .onChange(of: locationService.driverLocation?.longitude) { _ in
+        .onChange(of: locationService.driverLocation?.longitude) {
             if !isDriver { refreshDriverApproachMetrics() }
         }
-        .onChange(of: riderPickupLocations.count) { _ in
+        .onChange(of: riderPickupLocations.count) {
             refreshDriverApproachMetrics(force: true)
         }
     }
@@ -162,7 +163,9 @@ struct ActiveTripView: View {
                     routeEnd: routeLineDestinationCoordinate,
                     riders: riderCoordinates,
                     fitAnchors: overviewFitAnchors,
-                    showsUserLocation: true
+                    showsUserLocation: true,
+                    simulationPath: locationService.simulationRemainingPath,
+                    simulationPickup: simulationPickupCoord
                 )
             } else {
                 AnchorRouteMapView(
@@ -171,7 +174,9 @@ struct ActiveTripView: View {
                     driver: driverCoordinate,
                     anchorPoints: anchorPoints,
                     showsUserLocation: true,
-                    frequentRoutes: frequentRoutes
+                    frequentRoutes: frequentRoutes,
+                    simulationPath: locationService.simulationRemainingPath,
+                    simulationPickup: simulationPickupCoord
                 )
             }
         }
@@ -984,6 +989,7 @@ struct ActiveTripView: View {
 
         await MainActor.run {
             withAnimation { tripStatus = .enRoute }
+            simulationPickupCoord = resolvedPickup
             showPostRideSummary = false
         }
         locationService.startSimulatedMovement(
@@ -1004,6 +1010,7 @@ struct ActiveTripView: View {
 
         await MainActor.run {
             withAnimation { tripStatus = .inProgress }
+            simulationPickupCoord = nil
         }
         locationService.startSimulatedMovement(
             from: locationService.currentLocation?.coordinate ?? resolvedPickup,
@@ -1029,6 +1036,7 @@ struct ActiveTripView: View {
 
         await MainActor.run {
             withAnimation { tripStatus = .enRoute }
+            simulationPickupCoord = pickup
             showPostRideSummary = false
         }
         do {
@@ -1052,6 +1060,7 @@ struct ActiveTripView: View {
 
         await MainActor.run {
             withAnimation { tripStatus = .inProgress }
+            simulationPickupCoord = nil
         }
         do {
             let start = driverCoordinate ?? locationService.driverLocation?.coordinate ?? pickup
