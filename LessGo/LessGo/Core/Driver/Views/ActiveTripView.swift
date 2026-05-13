@@ -47,6 +47,15 @@ struct ActiveTripView: View {
     @State private var cardCollapsed = false
     @State private var dragOffset: CGFloat = 0
 
+    // Multi-rider simulation support
+    @State private var allPassengers: [BookingWithRider] = []
+    @State private var simulationRouteStops: [SimulationRouteStop] = []
+    @State private var currentSimulationStep: Int = 0
+    @State private var showSimulationDebug = false
+
+    // Debug visibility
+    @State private var simulationDebugInfo: String = ""
+
     private let tripService = TripService.shared
 
     init(trip: Trip, booking: Booking? = nil, isDriver: Bool, isSimulationMode: Bool = false) {
@@ -842,9 +851,22 @@ struct ActiveTripView: View {
     private var debugTestingControls: some View {
         VStack(alignment: .leading, spacing: 8) {
             Divider()
-            Text("Trip Simulation")
-                .font(.system(size: 12, weight: .bold))
-                .foregroundColor(.textTertiary)
+            HStack {
+                Text("Trip Simulation")
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundColor(.textTertiary)
+                Spacer()
+                Button(showSimulationDebug ? "Hide Debug" : "Show Debug") {
+                    showSimulationDebug.toggle()
+                }
+                .font(.system(size: 11, weight: .semibold))
+                    .foregroundColor(.brand)
+            }
+
+            if showSimulationDebug {
+                simulationDebugView
+                    .padding(.vertical, 8)
+            }
 
             if isDriver {
                 Button("Simulate Full Ride") {
@@ -882,6 +904,65 @@ struct ActiveTripView: View {
             .debugPill()
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    // MARK: - Simulation Debug View
+
+    private var simulationDebugView: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Simulation Route Debug")
+                .font(.system(size: 11, weight: .bold))
+                .foregroundColor(.brandOrange)
+
+            VStack(alignment: .leading, spacing: 4) {
+                debugRow("Trip Origin", trip.origin)
+                debugRow("Trip Destination", trip.destination)
+                debugRow("Origin Point", trip.originPoint?.description ?? "nil")
+                debugRow("Destination Point", trip.destinationPoint?.description ?? "nil")
+                debugRow("Driver Start", driverCoordinate?.debugDescription ?? "nil")
+                debugRow("Current Location", locationService.currentLocation?.coordinate.debugDescription ?? "nil")
+                debugRow("Simulation Pickup", simulationPickupCoord?.debugDescription ?? "nil")
+                debugRow("Passengers Loaded", "\(allPassengers.count)")
+                debugRow("Route Stops", "\(simulationRouteStops.count)")
+            }
+            .font(.system(size: 10))
+                .foregroundColor(.textSecondary)
+
+            if !simulationRouteStops.isEmpty {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Route Sequence:")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundColor(.textPrimary)
+                    ForEach(Array(simulationRouteStops.enumerated()), id: \.offset) { index, stop in
+                        HStack(spacing: 4) {
+                            Text("\(index + 1).")
+                                .font(.system(size: 10, weight: .bold))
+                                .foregroundColor(.brand)
+                            Text(stop.name)
+                                .font(.system(size: 10))
+                                .foregroundColor(.textPrimary)
+                            Spacer()
+                            Text(stop.coordinate.debugDescription)
+                                .font(.system(size: 9))
+                                .foregroundColor(.textTertiary)
+                        }
+                    }
+                }
+            }
+        }
+        .padding(10)
+        .background(Color.brandOrange.opacity(0.08))
+        .cornerRadius(8)
+    }
+
+    private func debugRow(_ label: String, _ value: String) -> some View {
+        HStack {
+            Text("\(label):")
+                .foregroundColor(.textTertiary)
+            Text(value.isEmpty ? "—" : value)
+                .foregroundColor(.textPrimary)
+            Spacer()
+        }
     }
 
     private func simulateDriverPath(toDestination: Bool) async {
@@ -971,62 +1052,137 @@ struct ActiveTripView: View {
     }
 
     private func simulateFullRideAsDriver() async {
-        // Only use trip.originPoint as start fallback if it's not SJSU itself —
-        // SJSU is the common destination, not a valid driver home origin.
-        let originFallback: CLLocationCoordinate2D? = {
-            guard let coord = trip.originPoint?.clLocationCoordinate2D else { return nil }
-            return isNearSJSU(coord) ? nil : coord
-        }()
-        // Resolve coordinates: prefer live location and real rider pickup data.
-        // Fall back to originFallback (driver home) only when no live data is available.
-        // Never use SJSU as the simulation start point.
-        let resolvedStart = locationService.currentLocation?.coordinate
-            ?? driverCoordinate
-            ?? originFallback
-            ?? AppConstants.sjsuCoordinate
-        let resolvedPickup = focusedPickupCoordinate ?? originFallback ?? resolvedStart
-        let resolvedDropoff = trip.destinationPoint?.clLocationCoordinate2D ?? resolvedPickup
+        // Load all passengers for this trip
+        do {
+            allPassengers = try await tripService.getTripPassengers(tripId: trip.id)
+        } catch {
+            print("Failed to load passengers for simulation: \(error)")
+            allPassengers = []
+        }
+
+        // Build the route: Driver Start → All Pickups → Destination
+        simulationRouteStops = buildSimulationRoute()
+
+        guard !simulationRouteStops.isEmpty else {
+            print("No route stops available for simulation")
+            return
+        }
 
         await MainActor.run {
             withAnimation { tripStatus = .enRoute }
-            simulationPickupCoord = resolvedPickup
-            showPostRideSummary = false
-        }
-        locationService.startSimulatedMovement(
-            from: resolvedStart,
-            to: resolvedPickup,
-            tripId: trip.id,
-            sendToBackend: false,
-            updateDriverFeedOnly: false,
-            stepInterval: 0.22,
-            steps: 65
-        )
-        await waitForSimulationToFinish(maxSeconds: 30)
-
-        await MainActor.run {
-            withAnimation { tripStatus = .arrived }
-        }
-        try? await Task.sleep(nanoseconds: 900_000_000)
-
-        await MainActor.run {
-            withAnimation { tripStatus = .inProgress }
             simulationPickupCoord = nil
+            showPostRideSummary = false
+            currentSimulationStep = 0
         }
-        locationService.startSimulatedMovement(
-            from: locationService.currentLocation?.coordinate ?? resolvedPickup,
-            to: resolvedDropoff,
-            tripId: trip.id,
-            sendToBackend: false,
-            updateDriverFeedOnly: false,
-            stepInterval: 0.22,
-            steps: 75
-        )
-        await waitForSimulationToFinish(maxSeconds: 35)
+
+        // Simulate through each stop
+        for (index, stop) in simulationRouteStops.enumerated() {
+            // Skip the first stop (driver start) - we're already there
+            if index == 0 { continue }
+
+            let from = simulationRouteStops[index - 1].coordinate
+            let to = stop.coordinate
+
+            // Update simulation pickup coord for the first pickup
+            if index == 1 {
+                await MainActor.run {
+                    simulationPickupCoord = to
+                }
+            }
+
+            // Simulate movement to this stop
+            locationService.startSimulatedMovement(
+                from: from,
+                to: to,
+                tripId: trip.id,
+                sendToBackend: false,
+                updateDriverFeedOnly: false,
+                stepInterval: 0.22,
+                steps: 50
+            )
+
+            await waitForSimulationToFinish(maxSeconds: 30)
+
+            // Update status based on stop type
+            await MainActor.run {
+                switch stop.type {
+                case .pickup:
+                    tripStatus = .arrived
+                case .destination:
+                    tripStatus = .inProgress
+                case .driverStart:
+                    break
+                }
+            }
+
+            // Brief pause at each stop
+            try? await Task.sleep(nanoseconds: 500_000_000)
+
+            currentSimulationStep = index
+        }
 
         await MainActor.run {
             withAnimation { tripStatus = .completed }
             showPostRideSummary = true
+            simulationPickupCoord = nil
         }
+    }
+
+    // Build the simulation route: Driver Start → Pickups → Destination
+    private func buildSimulationRoute() -> [SimulationRouteStop] {
+        var stops: [SimulationRouteStop] = []
+
+        // 1. Driver's starting point
+        let driverStart = locationService.currentLocation?.coordinate
+            ?? driverCoordinate
+            ?? trip.originPoint?.clLocationCoordinate2D
+            ?? AppConstants.sjsuCoordinate
+
+        stops.append(SimulationRouteStop(
+            name: "Driver Start",
+            coordinate: driverStart,
+            type: .driverStart
+        ))
+
+        // 2. Add all approved passenger pickups
+        let approvedPassengers = allPassengers.filter { $0.bookingState == .approved || $0.bookingState == .completed }
+
+        // Sort pickups by distance from driver start (or by creation time if no origin)
+        let sortedPickups: [BookingWithRider]
+        if let origin = trip.originPoint?.clLocationCoordinate2D {
+            let originLoc = CLLocation(latitude: origin.latitude, longitude: origin.longitude)
+            sortedPickups = approvedPassengers.sorted {
+                guard let a = $0.pickupLocation, let b = $1.pickupLocation else { return false }
+                let aLoc = CLLocation(latitude: a.lat, longitude: a.lng)
+                let bLoc = CLLocation(latitude: b.lat, longitude: b.lng)
+                return aLoc.distance(from: originLoc) < bLoc.distance(from: originLoc)
+            }
+        } else {
+            sortedPickups = approvedPassengers.sorted { $0.createdAt < $1.createdAt }
+        }
+
+        for passenger in sortedPickups {
+            if let pickup = passenger.pickupLocation {
+                let coord = CLLocationCoordinate2D(latitude: pickup.lat, longitude: pickup.lng)
+                let address = pickup.address ?? String(format: "%.4f, %.4f", pickup.lat, pickup.lng)
+                stops.append(SimulationRouteStop(
+                    name: "Pickup: \(passenger.riderName) (\(address))",
+                    coordinate: coord,
+                    type: .pickup(riderName: passenger.riderName)
+                ))
+            }
+        }
+
+        // 3. Final destination
+        if let dest = trip.destinationPoint?.clLocationCoordinate2D {
+            stops.append(SimulationRouteStop(
+                name: "Destination: \(trip.destination)",
+                coordinate: dest,
+                type: .destination
+            ))
+        }
+
+        return stops
     }
 
     private func simulateFullRideAsRiderUI() async {
@@ -1542,6 +1698,12 @@ struct ActiveTripView: View {
         lastETARouteKey = ""
         lastETAFetchAt = nil
 
+        // Reset new simulation state
+        allPassengers = []
+        simulationRouteStops = []
+        currentSimulationStep = 0
+        simulationPickupCoord = nil
+
         let origin = trip.originPoint?.clLocationCoordinate2D ?? AppConstants.sjsuCoordinate
         withAnimation {
             tripStatus = .pending
@@ -1886,6 +2048,20 @@ private struct PostRideReportSheet: View {
     }
 }
 
+// MARK: - Simulation Route Stop Model
+
+private struct SimulationRouteStop {
+    let name: String
+    let coordinate: CLLocationCoordinate2D
+    let type: StopType
+
+    enum StopType {
+        case driverStart
+        case pickup(riderName: String)
+        case destination
+    }
+}
+
 // MARK: - Preview
 
 #Preview {
@@ -1912,6 +2088,12 @@ private struct PostRideReportSheet: View {
 private extension Double {
     var roundedForRouteKey: Double {
         (self * 10_000).rounded() / 10_000
+    }
+}
+
+private extension CLLocationCoordinate2D {
+    var debugDescription: String {
+        String(format: "%.4f, %.4f", latitude, longitude)
     }
 }
 

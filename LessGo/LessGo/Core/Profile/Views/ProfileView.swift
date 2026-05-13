@@ -591,20 +591,6 @@ struct ProfileView: View {
                             label: "Reviews", icon: "bubble.fill", color: .brandGreen)
                     .staggeredAppear(index: 2)
             }
-
-            // Secondary stats (backend currently returns ratings/bookings counts, not distance)
-            if let stats = vm.stats {
-                HStack(spacing: 12) {
-                    ProfileStat(
-                        value: "\(stats.totalBookingsAsRider ?? 0)",
-                        label: "Bookings", icon: "ticket.fill", color: .brand)
-                        .staggeredAppear(index: 3)
-                    ProfileStat(
-                        value: "\(stats.totalRatings)",
-                        label: "Rated", icon: "person.2.fill", color: .brandGreen)
-                        .staggeredAppear(index: 4)
-                }
-            }
         }
         .padding(.horizontal, AppConstants.pagePadding)
     }

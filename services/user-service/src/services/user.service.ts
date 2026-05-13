@@ -341,8 +341,15 @@ export const getDriverEarnings = async (userId: string) => {
   const totalEarned = parseFloat(earningsResult.rows[0].earnings || 0);
 
   const completedTripsQuery = `
-    SELECT COUNT(*) as count FROM trips
-    WHERE driver_id = $1 AND status = 'completed'
+    SELECT COUNT(DISTINCT t.trip_id) as count
+    FROM trips t
+    WHERE t.driver_id = $1
+      AND EXISTS (
+        SELECT 1 FROM payments p
+        JOIN bookings b ON p.booking_id = b.booking_id
+        WHERE b.trip_id = t.trip_id
+          AND p.status = 'captured'
+      )
   `;
   const completedTrips = await pool.query(completedTripsQuery, [userId]);
 
@@ -359,19 +366,19 @@ export const getDriverEarnings = async (userId: string) => {
     JOIN trips t ON b.trip_id = t.trip_id
     WHERE t.driver_id = $1
       AND b.booking_state = 'completed'
-      AND DATE_TRUNC('month', b.updated_at) = DATE_TRUNC('month', CURRENT_DATE)
+      AND DATE_TRUNC('month', t.updated_at) = DATE_TRUNC('month', CURRENT_DATE)
   `;
   const thisMonthResult = await pool.query(thisMonthQuery, [userId]);
 
   const todayQuery = `
-    SELECT COALESCE(SUM(COALESCE(q.final_price, q.max_price)), 0) as today_total,
-           COUNT(*) as today_trips
-    FROM quotes q
-    JOIN bookings b ON q.booking_id = b.booking_id
+    SELECT COALESCE(SUM(p.amount), 0) as today_total,
+           COUNT(DISTINCT t.trip_id) as today_trips
+    FROM payments p
+    JOIN bookings b ON p.booking_id = b.booking_id
     JOIN trips t ON b.trip_id = t.trip_id
     WHERE t.driver_id = $1
-      AND b.booking_state = 'completed'
-      AND DATE(b.updated_at) = CURRENT_DATE
+      AND p.status = 'captured'
+      AND DATE(p.updated_at) = CURRENT_DATE
   `;
   const todayResult = await pool.query(todayQuery, [userId]);
 

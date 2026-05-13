@@ -147,6 +147,12 @@ struct Coordinate: Codable {
     }
 }
 
+extension Coordinate: CustomStringConvertible {
+    var description: String {
+        String(format: "%.4f, %.4f", lat, lng)
+    }
+}
+
 enum TripStatus: String, Codable {
     case pending        // Trip created, waiting for driver to start
     case enRoute = "en_route"       // Driver heading to pickup location
