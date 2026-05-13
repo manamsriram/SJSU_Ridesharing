@@ -355,15 +355,9 @@ export const getDriverEarnings = async (userId: string) => {
   const totalEarned = parseFloat(totalEarnedResult.rows[0].total || 0);
 
   const completedTripsQuery = `
-    SELECT COUNT(DISTINCT t.trip_id) as count
-    FROM trips t
-    WHERE t.driver_id = $1
-      AND EXISTS (
-        SELECT 1 FROM payments p
-        JOIN bookings b ON p.booking_id = b.booking_id
-        WHERE b.trip_id = t.trip_id
-          AND p.status = 'captured'
-      )
+    SELECT COUNT(*) as count
+    FROM trips
+    WHERE driver_id = $1 AND status = 'completed'
   `;
   const completedTrips = await pool.query(completedTripsQuery, [userId]);
 
