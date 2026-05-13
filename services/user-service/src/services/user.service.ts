@@ -246,9 +246,15 @@ export const getUserStats = async (
   // If driver, get trip stats
   if (user.role === UserRole.Driver) {
     const tripStatsQuery = `
-      SELECT COUNT(*) as total_trips
-      FROM trips
-      WHERE driver_id = $1 AND status = 'completed'
+      SELECT COUNT(DISTINCT t.trip_id) as total_trips
+      FROM trips t
+      WHERE t.driver_id = $1
+        AND EXISTS (
+          SELECT 1 FROM payments p
+          JOIN bookings b ON p.booking_id = b.booking_id
+          WHERE b.trip_id = t.trip_id
+            AND p.status = 'captured'
+        )
     `;
 
     const tripStats = await pool.query(tripStatsQuery, [userId]);
@@ -366,7 +372,7 @@ export const getDriverEarnings = async (userId: string) => {
     JOIN trips t ON b.trip_id = t.trip_id
     WHERE t.driver_id = $1
       AND b.booking_state = 'completed'
-      AND DATE_TRUNC('month', t.updated_at) = DATE_TRUNC('month', CURRENT_DATE)
+      AND DATE_TRUNC('month', b.updated_at) = DATE_TRUNC('month', CURRENT_DATE)
   `;
   const thisMonthResult = await pool.query(thisMonthQuery, [userId]);
 
