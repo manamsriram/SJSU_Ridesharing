@@ -56,6 +56,8 @@ class BookingViewModel: ObservableObject {
 
     func loadPostedTrips(driverId: String) async {
         isLoading = postedTrips.isEmpty
+        errorMessage = nil
+        errorKind = nil
         defer { isLoading = false }
         do {
             let response = try await TripService.shared.listTrips(driverId: driverId, limit: 50)
@@ -73,7 +75,19 @@ class BookingViewModel: ObservableObject {
                     return trip.status == .pending
                 }
             }
+        } catch let error as NetworkError {
+            #if DEBUG
+            print("[BookingViewModel] Failed to load posted trips: \(error)")
+            #endif
+            errorMessage = error.userMessage
+            errorKind = errorKindFor(error)
+            postedTrips = []
         } catch {
+            #if DEBUG
+            print("[BookingViewModel] Failed to load posted trips: \(error)")
+            #endif
+            errorMessage = (error as? NetworkError)?.userMessage ?? "Something went wrong. Please try again."
+            errorKind = .other
             postedTrips = []
         }
     }
