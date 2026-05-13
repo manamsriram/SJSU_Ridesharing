@@ -71,16 +71,16 @@ class ProfileViewModel: ObservableObject {
         !pickerMake.isEmpty && !pickerModel.isEmpty
     }
 
-    // Count of unique trips that have bookings (pending, approved, or completed)
+    // Count of unique trips that have bookings (pending or approved, not completed)
     var tripsWithPassengersCount: Int {
         let cutoff = Date().addingTimeInterval(-24 * 3600)
         let validBookings = driverBookings.filter { booking in
+            // Exclude completed bookings
+            if booking.bookingState == .completed {
+                return false
+            }
             // Filter out cancelled/rejected bookings older than 24h
             if booking.bookingState == .cancelled || booking.bookingState == .rejected {
-                return booking.updatedAt >= cutoff
-            }
-            // Keep completed bookings visible for 24h
-            if booking.bookingState == .completed {
                 return booking.updatedAt >= cutoff
             }
             // Hide bookings whose trip departed more than 24 hours ago

@@ -342,9 +342,17 @@ export const getDriverEarnings = async (userId: string) => {
     throw new Error('User is not a driver');
   }
 
-  const earningsQuery = `SELECT earnings FROM users WHERE user_id = $1`;
-  const earningsResult = await pool.query(earningsQuery, [userId]);
-  const totalEarned = parseFloat(earningsResult.rows[0].earnings || 0);
+  // Calculate total earned from all captured payments
+  const totalEarnedQuery = `
+    SELECT COALESCE(SUM(p.amount), 0) as total
+    FROM payments p
+    JOIN bookings b ON p.booking_id = b.booking_id
+    JOIN trips t ON b.trip_id = t.trip_id
+    WHERE t.driver_id = $1
+      AND p.status = 'captured'
+  `;
+  const totalEarnedResult = await pool.query(totalEarnedQuery, [userId]);
+  const totalEarned = parseFloat(totalEarnedResult.rows[0].total || 0);
 
   const completedTripsQuery = `
     SELECT COUNT(DISTINCT t.trip_id) as count
@@ -366,13 +374,13 @@ export const getDriverEarnings = async (userId: string) => {
   const activeTrips = await pool.query(activeTripsQuery, [userId]);
 
   const thisMonthQuery = `
-    SELECT COALESCE(SUM(COALESCE(q.final_price, q.max_price)), 0) as month_total
-    FROM quotes q
-    JOIN bookings b ON q.booking_id = b.booking_id
+    SELECT COALESCE(SUM(p.amount), 0) as month_total
+    FROM payments p
+    JOIN bookings b ON p.booking_id = b.booking_id
     JOIN trips t ON b.trip_id = t.trip_id
     WHERE t.driver_id = $1
-      AND b.booking_state = 'completed'
-      AND DATE_TRUNC('month', b.updated_at) = DATE_TRUNC('month', CURRENT_DATE)
+      AND p.status = 'captured'
+      AND DATE_TRUNC('month', p.updated_at) = DATE_TRUNC('month', CURRENT_DATE)
   `;
   const thisMonthResult = await pool.query(thisMonthQuery, [userId]);
 
