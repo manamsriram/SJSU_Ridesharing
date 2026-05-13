@@ -369,7 +369,6 @@ struct RouteMapView: UIViewRepresentable {
                 let renderer = MKPolylineRenderer(polyline: sim)
                 renderer.strokeColor = UIColor.systemTeal.withAlphaComponent(0.75)
                 renderer.lineWidth = 3
-                renderer.lineDashPattern = [6, 5]
                 renderer.lineCap = .round
                 return renderer
             }
