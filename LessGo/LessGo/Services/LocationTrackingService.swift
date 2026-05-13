@@ -173,9 +173,11 @@ class LocationTrackingService: NSObject, ObservableObject {
         stepInterval: TimeInterval = 0.35,
         steps: Int = 90
     ) {
+        // Preserve tripId across leg transitions (stopSimulatedMovement would otherwise nil it)
+        let preservedTripId = tripId
         stopSimulatedMovement()
 
-        currentTripId = tripId
+        currentTripId = preservedTripId
         isSimulating = true
         isTracking = true
         simulationIndex = 0
@@ -186,7 +188,13 @@ class LocationTrackingService: NSObject, ObservableObject {
         Task { @MainActor [weak self] in
             guard let self else { return }
 
+            // Small yield to ensure previous CADisplayLink is fully torn down
+            try? await Task.sleep(nanoseconds: 50_000_000)
+            guard self.isSimulating else { return }
+
             let routePoints = await self.generateRoutedPoints(from: start, to: end, fallbackSteps: max(12, steps))
+            guard self.isSimulating else { return }
+
             self.simulatedRoute = routePoints
             self.simulationIndex = 0
             self.simulationRemainingPath = routePoints
@@ -210,7 +218,9 @@ class LocationTrackingService: NSObject, ObservableObject {
 
         isSimulating = false
         isTracking = false
-        currentTripId = nil
+        // Note: currentTripId is intentionally NOT cleared here.
+        // startSimulatedMovement calls stopSimulatedMovement before each new leg,
+        // and clearing tripId would break multi-leg simulations.
         simulatedRoute = []
         simulationIndex = 0
         simulationSendsToBackend = true

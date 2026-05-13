@@ -192,6 +192,7 @@ struct ActiveTripView: View {
                     destination: trip.destinationPoint?.clLocationCoordinate2D,
                     driver: driverCoordinate,
                     anchorPoints: anchorPoints,
+                    riders: riderCoordinates,
                     showsUserLocation: true,
                     frequentRoutes: frequentRoutes,
                     simulationPath: locationService.simulationRemainingPath,
@@ -608,51 +609,88 @@ struct ActiveTripView: View {
 
     // MARK: - Other Party Info
 
+    @ViewBuilder
     private var otherPartyInfo: some View {
-        HStack(spacing: 14) {
-            // Avatar
-            ZStack {
-                Circle()
-                    .fill(Color.brand.opacity(0.12))
-                    .frame(width: 48, height: 48)
-                Text(otherPartyName.prefix(1).uppercased())
-                    .font(.system(size: 20, weight: .bold))
-                    .foregroundColor(.brand)
-            }
-
-            VStack(alignment: .leading, spacing: 4) {
-                Text(otherPartyName)
-                    .font(.system(size: 16, weight: .bold))
-                    .foregroundColor(.textPrimary)
-
-                if !isDriver, let vehicle = trip.driver?.vehicleInfo {
-                    Text(vehicle)
-                        .font(.system(size: 13))
-                        .foregroundColor(.textSecondary)
-                }
-
-                if !isDriver, let plate = trip.driver?.licensePlate {
-                    HStack(spacing: 4) {
-                        Image(systemName: "creditcard.fill")
-                            .font(.system(size: 9))
-                        Text(plate)
-                            .font(.system(size: 11, weight: .medium))
+        if isDriver && initialPassengers.count > 1 {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Passengers (\(initialPassengers.count))")
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundColor(.textSecondary)
+                ForEach(initialPassengers) { passenger in
+                    HStack(spacing: 12) {
+                        ZStack {
+                            Circle()
+                                .fill(Color.brand.opacity(0.12))
+                                .frame(width: 36, height: 36)
+                            Text(passenger.riderName.prefix(1).uppercased())
+                                .font(.system(size: 14, weight: .bold))
+                                .foregroundColor(.brand)
+                        }
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(passenger.riderName)
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundColor(.textPrimary)
+                            if let pickup = passenger.pickupLocation {
+                                Text(pickup.address ?? String(format: "%.4f, %.4f", pickup.lat, pickup.lng))
+                                    .font(.system(size: 11))
+                                    .foregroundColor(.textSecondary)
+                                    .lineLimit(1)
+                            } else {
+                                Text("Pickup not shared")
+                                    .font(.system(size: 11))
+                                    .foregroundColor(.textTertiary)
+                            }
+                        }
+                        Spacer()
                     }
-                    .foregroundColor(.textTertiary)
                 }
             }
+        } else {
+            HStack(spacing: 14) {
+                // Avatar
+                ZStack {
+                    Circle()
+                        .fill(Color.brand.opacity(0.12))
+                        .frame(width: 48, height: 48)
+                    Text(otherPartyName.prefix(1).uppercased())
+                        .font(.system(size: 20, weight: .bold))
+                        .foregroundColor(.brand)
+                }
 
-            Spacer()
-
-            // Rating
-            if !isDriver, let driver = trip.driver {
-                HStack(spacing: 4) {
-                    Image(systemName: "star.fill")
-                        .font(.system(size: 12))
-                        .foregroundColor(.brandGold)
-                    Text(String(format: "%.1f", Double(driver.rating)))
-                        .font(.system(size: 14, weight: .semibold))
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(otherPartyName)
+                        .font(.system(size: 16, weight: .bold))
                         .foregroundColor(.textPrimary)
+
+                    if !isDriver, let vehicle = trip.driver?.vehicleInfo {
+                        Text(vehicle)
+                            .font(.system(size: 13))
+                            .foregroundColor(.textSecondary)
+                    }
+
+                    if !isDriver, let plate = trip.driver?.licensePlate {
+                        HStack(spacing: 4) {
+                            Image(systemName: "creditcard.fill")
+                                .font(.system(size: 9))
+                            Text(plate)
+                                .font(.system(size: 11, weight: .medium))
+                        }
+                        .foregroundColor(.textTertiary)
+                    }
+                }
+
+                Spacer()
+
+                // Rating
+                if !isDriver, let driver = trip.driver {
+                    HStack(spacing: 4) {
+                        Image(systemName: "star.fill")
+                            .font(.system(size: 12))
+                            .foregroundColor(.brandGold)
+                        Text(String(format: "%.1f", Double(driver.rating)))
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundColor(.textPrimary)
+                    }
                 }
             }
         }
@@ -1079,74 +1117,78 @@ struct ActiveTripView: View {
     }
 
     private func simulateFullRideAsDriver() async {
-        // Load all passengers for this trip
-        do {
-            allPassengers = try await tripService.getTripPassengers(tripId: trip.id)
-        } catch {
-            print("Failed to load passengers for simulation: \(error)")
-            allPassengers = []
-        }
+        // Clear stale position so the second run doesn't start at the previous destination.
+        locationService.currentLocation = nil
 
-        // Build the route: Driver Start → All Pickups → Destination
-        simulationRouteStops = buildSimulationRoute()
-
-        guard !simulationRouteStops.isEmpty else {
-            print("No route stops available for simulation")
-            return
+        // Use pre-loaded passengers — no network call needed.
+        allPassengers = initialPassengers
+        let simPickups = initialPassengers.reduce(into: [String: PickupLocation]()) { result, p in
+            if let pickup = p.pickupLocation { result[p.id] = pickup }
         }
+        await MainActor.run { riderPickupLocations = simPickups }
+
+        let originFallback: CLLocationCoordinate2D? = {
+            guard let coord = trip.originPoint?.clLocationCoordinate2D else { return nil }
+            return isNearSJSU(coord) ? nil : coord
+        }()
+        let resolvedStart = originFallback ?? AppConstants.sjsuCoordinate
+        let resolvedDropoff = trip.destinationPoint?.clLocationCoordinate2D ?? resolvedStart
+
+        // orderedPassengersWithPickups respects anchorPoints order (same as DriverTripDetailsView).
+        let orderedPairs = orderedPassengersWithPickups
+        let pickups = orderedPairs.map { $0.coordinate }
+        let resolvedPickups = pickups.isEmpty ? [originFallback ?? resolvedStart] : pickups
+
+        // Populate debug stops list.
+        simulationRouteStops = buildSimulationRoute(start: resolvedStart, orderedPairs: orderedPairs, dropoff: resolvedDropoff)
 
         await MainActor.run {
             withAnimation { tripStatus = .enRoute }
-            simulationPickupCoord = nil
+            simulationPickupCoord = resolvedPickups.first
             showPostRideSummary = false
             currentSimulationStep = 0
         }
 
-        // Simulate through each stop
-        for (index, stop) in simulationRouteStops.enumerated() {
-            // Skip the first stop (driver start) - we're already there
-            if index == 0 { continue }
+        var legStart = resolvedStart
+        for (index, pickup) in resolvedPickups.enumerated() {
+            let isLast = index == resolvedPickups.count - 1
 
-            let from = simulationRouteStops[index - 1].coordinate
-            let to = stop.coordinate
-
-            // Update simulation pickup coord for the first pickup
-            if index == 1 {
-                await MainActor.run {
-                    simulationPickupCoord = to
-                }
-            }
-
-            // Simulate movement to this stop
-            locationService.startSimulatedMovement(
-                from: from,
-                to: to,
-                tripId: trip.id,
-                sendToBackend: false,
-                updateDriverFeedOnly: false,
-                stepInterval: 0.22,
-                steps: 50
-            )
-
-            await waitForSimulationToFinish(maxSeconds: 30)
-
-            // Update status based on stop type
             await MainActor.run {
-                switch stop.type {
-                case .pickup:
-                    tripStatus = .arrived
-                case .destination:
-                    tripStatus = .inProgress
-                case .driverStart:
-                    break
-                }
+                simulationPickupCoord = pickup
+                currentSimulationStep = index + 1
             }
 
-            // Brief pause at each stop
-            try? await Task.sleep(nanoseconds: 500_000_000)
+            locationService.startSimulatedMovement(
+                from: legStart, to: pickup, tripId: trip.id,
+                sendToBackend: false, updateDriverFeedOnly: false,
+                stepInterval: 0.22, steps: 65
+            )
+            await waitForSimulationToFinish(maxSeconds: 30)
+            legStart = locationService.currentLocation?.coordinate ?? pickup
 
-            currentSimulationStep = index
+            if isLast {
+                await MainActor.run { withAnimation { tripStatus = .arrived } }
+                try? await Task.sleep(nanoseconds: 900_000_000)
+                await MainActor.run {
+                    withAnimation { tripStatus = .inProgress }
+                    simulationPickupCoord = nil
+                }
+            } else {
+                // Brief pause at intermediate stop before heading to next pickup.
+                await MainActor.run { withAnimation { tripStatus = .arrived } }
+                try? await Task.sleep(nanoseconds: 500_000_000)
+                await MainActor.run { withAnimation { tripStatus = .enRoute } }
+            }
         }
+
+        await MainActor.run { currentSimulationStep = simulationRouteStops.count - 1 }
+        locationService.startSimulatedMovement(
+            from: locationService.currentLocation?.coordinate ?? resolvedPickups.last ?? resolvedStart,
+            to: resolvedDropoff, tripId: trip.id,
+            sendToBackend: false, updateDriverFeedOnly: false,
+            stepInterval: 0.22, steps: 75
+        )
+        await waitForSimulationToFinish(maxSeconds: 35)
 
         await MainActor.run {
             withAnimation { tripStatus = .completed }
@@ -1155,60 +1197,26 @@ struct ActiveTripView: View {
         }
     }
 
-    // Build the simulation route: Driver Start → Pickups → Destination
-    private func buildSimulationRoute() -> [SimulationRouteStop] {
-        var stops: [SimulationRouteStop] = []
+    /// Builds the stop list used by the debug panel. Uses the same ordered pickups
+    /// as the simulation itself so the display matches what the driver actually drives.
+    private func buildSimulationRoute(
+        start: CLLocationCoordinate2D,
+        orderedPairs: [(passenger: BookingWithRider, coordinate: CLLocationCoordinate2D)],
+        dropoff: CLLocationCoordinate2D
+    ) -> [SimulationRouteStop] {
+        var stops: [SimulationRouteStop] = [
+            SimulationRouteStop(name: "Driver Start", coordinate: start, type: .driverStart)
+        ]
 
-        // 1. Driver's starting point
-        let driverStart = locationService.currentLocation?.coordinate
-            ?? driverCoordinate
-            ?? trip.originPoint?.clLocationCoordinate2D
-            ?? AppConstants.sjsuCoordinate
-
-        stops.append(SimulationRouteStop(
-            name: "Driver Start",
-            coordinate: driverStart,
-            type: .driverStart
-        ))
-
-        // 2. Add all approved passenger pickups
-        let approvedPassengers = allPassengers.filter { $0.bookingState == .approved || $0.bookingState == .completed }
-
-        // Sort pickups by distance from driver start (or by creation time if no origin)
-        let sortedPickups: [BookingWithRider]
-        if let origin = trip.originPoint?.clLocationCoordinate2D {
-            let originLoc = CLLocation(latitude: origin.latitude, longitude: origin.longitude)
-            sortedPickups = approvedPassengers.sorted {
-                guard let a = $0.pickupLocation, let b = $1.pickupLocation else { return false }
-                let aLoc = CLLocation(latitude: a.lat, longitude: a.lng)
-                let bLoc = CLLocation(latitude: b.lat, longitude: b.lng)
-                return aLoc.distance(from: originLoc) < bLoc.distance(from: originLoc)
-            }
-        } else {
-            sortedPickups = approvedPassengers.sorted { $0.createdAt < $1.createdAt }
-        }
-
-        for passenger in sortedPickups {
-            if let pickup = passenger.pickupLocation {
-                let coord = CLLocationCoordinate2D(latitude: pickup.lat, longitude: pickup.lng)
-                let address = pickup.address ?? String(format: "%.4f, %.4f", pickup.lat, pickup.lng)
-                stops.append(SimulationRouteStop(
-                    name: "Pickup: \(passenger.riderName) (\(address))",
-                    coordinate: coord,
-                    type: .pickup(riderName: passenger.riderName)
-                ))
-            }
-        }
-
-        // 3. Final destination
-        if let dest = trip.destinationPoint?.clLocationCoordinate2D {
+        for pair in orderedPairs {
             stops.append(SimulationRouteStop(
-                name: "Destination: \(trip.destination)",
-                coordinate: dest,
-                type: .destination
+                name: "Pickup: \(pair.passenger.riderName)",
+                coordinate: pair.coordinate,
+                type: .pickup(riderName: pair.passenger.riderName)
             ))
         }
 
+        stops.append(SimulationRouteStop(name: "Destination: \(trip.destination)", coordinate: dropoff, type: .destination))
         return stops
     }
 
@@ -1387,9 +1395,11 @@ struct ActiveTripView: View {
         }
     }
 
-    /// Pickup coordinates in the same order as DriverTripDetailsView's pickup timeline:
-    /// anchor-point order when available, otherwise sorted by distance from trip origin.
-    private var orderedPickupCoordinates: [CLLocationCoordinate2D] {
+    /// Passengers with their pickup coordinates in route order: anchor-point order when
+    /// available, otherwise sorted by distance from trip origin. Single source of truth
+    /// used by both orderedPickupCoordinates and buildSimulationRoute so names and coords
+    /// always stay in sync.
+    private var orderedPassengersWithPickups: [(passenger: BookingWithRider, coordinate: CLLocationCoordinate2D)] {
         let eligible = initialPassengers.filter {
             $0.pickupLocation != nil &&
             ($0.bookingState == .approved || $0.bookingState == .pending || $0.bookingState == .completed)
@@ -1403,7 +1413,7 @@ struct ActiveTripView: View {
                     guard let riderId = anchor.riderId,
                           let passenger = eligible.first(where: { $0.riderId == riderId }),
                           let pickup = passenger.pickupLocation else { return nil }
-                    return CLLocationCoordinate2D(latitude: pickup.lat, longitude: pickup.lng)
+                    return (passenger, CLLocationCoordinate2D(latitude: pickup.lat, longitude: pickup.lng))
                 }
         }
 
@@ -1418,7 +1428,11 @@ struct ActiveTripView: View {
         } else {
             sorted = eligible.sorted { $0.createdAt < $1.createdAt }
         }
-        return sorted.map { CLLocationCoordinate2D(latitude: $0.pickupLocation!.lat, longitude: $0.pickupLocation!.lng) }
+        return sorted.map { ($0, CLLocationCoordinate2D(latitude: $0.pickupLocation!.lat, longitude: $0.pickupLocation!.lng)) }
+    }
+
+    private var orderedPickupCoordinates: [CLLocationCoordinate2D] {
+        orderedPassengersWithPickups.map { $0.coordinate }
     }
 
     private var otherPartyName: String {

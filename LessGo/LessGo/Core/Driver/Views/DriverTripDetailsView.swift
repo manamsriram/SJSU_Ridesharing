@@ -138,6 +138,7 @@ struct DriverTripDetailsView: View {
                 destination: destination,
                 driver: nil,
                 anchorPoints: anchorPoints,
+                riders: allPickupCoords,
                 showsUserLocation: true
             )
         } else {

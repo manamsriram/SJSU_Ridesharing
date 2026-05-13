@@ -19,6 +19,8 @@ struct AnchorRouteMapView: UIViewRepresentable {
     let driver: CLLocationCoordinate2D?
     // Ordered anchor points from Algorithm 3 (may be empty for simple trips)
     var anchorPoints: [AnchorPoint] = []
+    // Additional rider pickup coordinates to display (for riders not covered by anchor points)
+    var riders: [CLLocationCoordinate2D] = []
     var showsUserLocation: Bool = true
     // Mined frequent routes (He et al. 2014) rendered as dashed navy polylines
     var frequentRoutes: [FrequentRouteSegment] = []
@@ -66,6 +68,7 @@ struct AnchorRouteMapView: UIViewRepresentable {
             destination: destination,
             driver: driver,
             anchors: anchorPoints,
+            riders: riders,
             ownRiderId: ownRiderId,
             simulationPickup: simulationPickup
         )
@@ -112,6 +115,7 @@ struct AnchorRouteMapView: UIViewRepresentable {
             destination: CLLocationCoordinate2D?,
             driver: CLLocationCoordinate2D?,
             anchors: [AnchorPoint],
+            riders: [CLLocationCoordinate2D] = [],
             ownRiderId: String? = nil,
             simulationPickup: CLLocationCoordinate2D? = nil
         ) {
@@ -123,16 +127,30 @@ struct AnchorRouteMapView: UIViewRepresentable {
             if let driver      { desired["driver"]      = (driver,      "driver") }
             if let simulationPickup { desired["sim_pickup"] = (simulationPickup, "sim_pickup") }
 
+            // Collect anchor pickup coordinates so we can skip duplicate rider pins
+            var anchorPickupCoords: Set<String> = []
+
             for (i, anchor) in anchors.enumerated() {
                 // If ownRiderId is set, only pin this rider's own stop (polyline still uses all anchors)
                 if let ownRiderId, let anchorRiderId = anchor.riderId, anchorRiderId != ownRiderId {
                     continue
                 }
                 let key = "anchor_\(i)_\(anchor.type)"
+                let coord = CLLocationCoordinate2D(latitude: anchor.lat, longitude: anchor.lng)
                 desired[key] = (
-                    CLLocationCoordinate2D(latitude: anchor.lat, longitude: anchor.lng),
+                    coord,
                     anchor.type == .pickup ? "anchor_pickup" : "anchor_dropoff"
                 )
+                if anchor.type == .pickup {
+                    anchorPickupCoords.insert("\(anchor.lat.rounded(toPlaces: 4)),\(anchor.lng.rounded(toPlaces: 4))")
+                }
+            }
+
+            // Add rider pickup annotations for riders not already covered by anchor points
+            for (idx, rider) in riders.enumerated() {
+                let riderKey = "\(rider.latitude.rounded(toPlaces: 4)),\(rider.longitude.rounded(toPlaces: 4))"
+                if anchorPickupCoords.contains(riderKey) { continue }
+                desired["rider_\(idx)"] = (rider, "rider")
             }
 
             let removedKeys = Set(annotationsByID.keys).subtracting(desired.keys)
@@ -398,6 +416,9 @@ struct AnchorRouteMapView: UIViewRepresentable {
             case "sim_pickup":
                 view.markerTintColor = UIColor.systemTeal
                 view.glyphImage = UIImage(systemName: "figure.wave")
+            case "rider":
+                view.markerTintColor = UIColor(Color.brandRed)
+                view.glyphImage = UIImage(systemName: "figure.walk")
             case "anchor_pickup":
                 view.markerTintColor = UIColor(Color.brand.opacity(0.8))
                 view.glyphImage = UIImage(systemName: "circle.fill")
@@ -430,8 +451,8 @@ final class SimulationPathPolyline: MKPolyline {}
 
 final class FrequentRoutePolyline: MKPolyline {}
 
-private extension Double {
-    func rounded(toPlaces places: Int) -> Double {
+extension Double {
+    fileprivate func rounded(toPlaces places: Int) -> Double {
         let factor = pow(10.0, Double(places))
         return (self * factor).rounded() / factor
     }
