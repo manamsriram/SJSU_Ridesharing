@@ -16,6 +16,7 @@ struct ActiveTripView: View {
     let booking: Booking?
     let isDriver: Bool
     let isSimulationMode: Bool  // Flag for sandbox simulation
+    let initialPassengers: [BookingWithRider]
 
     @State private var tripStatus: TripStatus
     @State private var showChat = false
@@ -37,6 +38,7 @@ struct ActiveTripView: View {
     @State private var distanceToPickupMeters: CLLocationDistance?
     @State private var lastETARouteKey = ""
     @State private var lastETAFetchAt: Date?
+    @State private var activeETADirections: MKDirections?
     @State private var lastSentRiderPickupCoordinate: CLLocationCoordinate2D?
     @State private var isSimulatingRiderMovement = false
     @State private var riderSimulationTask: Task<Void, Never>?
@@ -58,12 +60,17 @@ struct ActiveTripView: View {
 
     private let tripService = TripService.shared
 
-    init(trip: Trip, booking: Booking? = nil, isDriver: Bool, isSimulationMode: Bool = false) {
+    init(trip: Trip, booking: Booking? = nil, isDriver: Bool, isSimulationMode: Bool = false, initialPassengers: [BookingWithRider] = []) {
         self.trip = trip
         self.booking = booking
         self.isDriver = isDriver
         self.isSimulationMode = isSimulationMode
+        self.initialPassengers = initialPassengers
         _tripStatus = State(initialValue: trip.status)
+        let pickups = initialPassengers.reduce(into: [String: PickupLocation]()) { result, p in
+            if let pickup = p.pickupLocation { result[p.id] = pickup }
+        }
+        _riderPickupLocations = State(initialValue: pickups)
     }
 
     var body: some View {
@@ -122,8 +129,12 @@ struct ActiveTripView: View {
             Text(errorMessage ?? "Something went wrong")
         }
         .task {
-            // Auto-run simulation in simulation mode
             if isSimulationMode {
+                // Load map data concurrently before simulation starts
+                async let pointsFetch = tripService.getAnchorPoints(tripId: trip.id)
+                async let routesFetch = tripService.getFrequentRoutes(driverId: trip.driverId)
+                if let pts = try? await pointsFetch, !pts.isEmpty { anchorPoints = pts }
+                if isDriver, let rts = try? await routesFetch { frequentRoutes = rts }
                 await simulateFullRideAsDriver()
                 return
             }
@@ -132,7 +143,6 @@ struct ActiveTripView: View {
             if let points = try? await tripService.getAnchorPoints(tripId: trip.id), !points.isEmpty {
                 anchorPoints = points
             }
-            // Load driver's mined frequent routes for map overlay (driver-only)
             if isDriver {
                 if let routes = try? await tripService.getFrequentRoutes(driverId: trip.driverId) {
                     frequentRoutes = routes
@@ -968,32 +978,49 @@ struct ActiveTripView: View {
     private func simulateDriverPath(toDestination: Bool) async {
         let fallbackStart = trip.originPoint?.clLocationCoordinate2D ?? AppConstants.sjsuCoordinate
         let start = driverCoordinate ?? locationService.currentLocation?.coordinate ?? fallbackStart
-        let end = toDestination
-            ? (trip.destinationPoint?.clLocationCoordinate2D ?? start)
-            : (focusedPickupCoordinate ?? trip.originPoint?.clLocationCoordinate2D ?? start)
 
-        await MainActor.run {
-            withAnimation {
-                tripStatus = toDestination ? .inProgress : .enRoute
+        if toDestination {
+            let end = trip.destinationPoint?.clLocationCoordinate2D ?? start
+            await MainActor.run {
+                withAnimation { tripStatus = .inProgress }
+                simulationPickupCoord = nil
+                showPostRideSummary = false
             }
-            showPostRideSummary = false
-        }
+            locationService.startSimulatedMovement(
+                from: start, to: end, tripId: trip.id,
+                sendToBackend: false, updateDriverFeedOnly: false,
+                stepInterval: 0.28, steps: 55
+            )
+            await waitForSimulationToFinish(maxSeconds: 25)
+        } else {
+            let pickups = orderedPickupCoordinates
+            let resolvedPickups = pickups.isEmpty
+                ? [focusedPickupCoordinate ?? fallbackStart]
+                : pickups
 
-        locationService.startSimulatedMovement(
-            from: start,
-            to: end,
-            tripId: trip.id,
-            sendToBackend: false,
-            updateDriverFeedOnly: false,
-            stepInterval: 0.28,
-            steps: 55
-        )
+            await MainActor.run {
+                withAnimation { tripStatus = .enRoute }
+                simulationPickupCoord = resolvedPickups.first
+                showPostRideSummary = false
+            }
 
-        await waitForSimulationToFinish(maxSeconds: 25)
+            var legStart = start
+            for (index, pickup) in resolvedPickups.enumerated() {
+                let isLast = index == resolvedPickups.count - 1
+                await MainActor.run { simulationPickupCoord = pickup }
+                locationService.startSimulatedMovement(
+                    from: legStart, to: pickup, tripId: trip.id,
+                    sendToBackend: false, updateDriverFeedOnly: false,
+                    stepInterval: 0.28, steps: 55
+                )
+                await waitForSimulationToFinish(maxSeconds: 25)
+                legStart = locationService.currentLocation?.coordinate ?? pickup
+                if !isLast { try? await Task.sleep(nanoseconds: 500_000_000) }
+            }
 
-        if !toDestination {
             await MainActor.run {
                 withAnimation { tripStatus = .arrived }
+                simulationPickupCoord = nil
             }
         }
     }
@@ -1360,6 +1387,40 @@ struct ActiveTripView: View {
         }
     }
 
+    /// Pickup coordinates in the same order as DriverTripDetailsView's pickup timeline:
+    /// anchor-point order when available, otherwise sorted by distance from trip origin.
+    private var orderedPickupCoordinates: [CLLocationCoordinate2D] {
+        let eligible = initialPassengers.filter {
+            $0.pickupLocation != nil &&
+            ($0.bookingState == .approved || $0.bookingState == .pending || $0.bookingState == .completed)
+        }
+        if eligible.isEmpty { return [] }
+
+        if !anchorPoints.isEmpty {
+            return anchorPoints
+                .filter { $0.type == .pickup }
+                .compactMap { anchor in
+                    guard let riderId = anchor.riderId,
+                          let passenger = eligible.first(where: { $0.riderId == riderId }),
+                          let pickup = passenger.pickupLocation else { return nil }
+                    return CLLocationCoordinate2D(latitude: pickup.lat, longitude: pickup.lng)
+                }
+        }
+
+        let sorted: [BookingWithRider]
+        if let origin = trip.originPoint {
+            let originLoc = CLLocation(latitude: origin.lat, longitude: origin.lng)
+            sorted = eligible.sorted {
+                let a = CLLocation(latitude: $0.pickupLocation!.lat, longitude: $0.pickupLocation!.lng)
+                let b = CLLocation(latitude: $1.pickupLocation!.lat, longitude: $1.pickupLocation!.lng)
+                return a.distance(from: originLoc) < b.distance(from: originLoc)
+            }
+        } else {
+            sorted = eligible.sorted { $0.createdAt < $1.createdAt }
+        }
+        return sorted.map { CLLocationCoordinate2D(latitude: $0.pickupLocation!.lat, longitude: $0.pickupLocation!.lng) }
+    }
+
     private var otherPartyName: String {
         if isDriver {
             return booking?.rider?.name ?? "Rider"
@@ -1413,8 +1474,12 @@ struct ActiveTripView: View {
         case .pending:
             return trip.originPoint?.clLocationCoordinate2D
         case .enRoute, .arrived:
+            // Pin to static origin during simulation — live driverCoordinate changes at 30fps
+            // and causes constant MKDirections rerequests + geodesic fallback lines.
+            if locationService.isSimulatingMovement { return trip.originPoint?.clLocationCoordinate2D }
             return driverCoordinate ?? trip.originPoint?.clLocationCoordinate2D
         case .inProgress:
+            if locationService.isSimulatingMovement { return focusedPickupCoordinate ?? trip.originPoint?.clLocationCoordinate2D }
             return driverCoordinate ?? focusedPickupCoordinate ?? trip.originPoint?.clLocationCoordinate2D
         case .completed, .cancelled:
             return trip.originPoint?.clLocationCoordinate2D
@@ -1627,6 +1692,8 @@ struct ActiveTripView: View {
         riderSimulationTask?.cancel()
         riderSimulationTask = nil
         isSimulatingRiderMovement = false
+        activeETADirections?.cancel()
+        activeETADirections = nil
     }
 
     private func refreshDriverApproachMetrics(force: Bool = false) {
@@ -1656,24 +1723,31 @@ struct ActiveTripView: View {
         let fallbackETA = max(1, Int((straightDistance / 1609.344 / 28.0) * 60.0))
         etaToPickupMinutes = fallbackETA
 
-        // Use traffic-aware MKDirections but throttle heavily to avoid GEO throttling during rapid updates.
-        let minFetchInterval: TimeInterval = locationService.isSimulatingMovement ? 4.0 : 2.5
-        if !force, let lastFetch = lastETAFetchAt, Date().timeIntervalSince(lastFetch) < minFetchInterval {
+        // Skip live routing during simulation — straight-line fallback above is sufficient.
+        if locationService.isSimulatingMovement { return }
+
+        // Throttle MKDirections to avoid GEO allocator pressure from rapid location updates.
+        if !force, let lastFetch = lastETAFetchAt, Date().timeIntervalSince(lastFetch) < 2.5 {
             return
         }
         lastETAFetchAt = Date()
 
+        activeETADirections?.cancel()
         let request = MKDirections.Request()
         request.source = MKMapItem(placemark: MKPlacemark(coordinate: driver))
         request.destination = MKMapItem(placemark: MKPlacemark(coordinate: pickup))
         request.transportType = .automobile
 
-        MKDirections(request: request).calculate { response, _ in
+        let directions = MKDirections(request: request)
+        activeETADirections = directions
+        directions.calculate { response, _ in
             DispatchQueue.main.async {
+                guard self.activeETADirections === directions else { return }
                 if let route = response?.routes.first {
                     self.distanceToPickupMeters = route.distance
                     self.etaToPickupMinutes = max(1, Int(route.expectedTravelTime / 60.0))
                 }
+                self.activeETADirections = nil
             }
         }
     }

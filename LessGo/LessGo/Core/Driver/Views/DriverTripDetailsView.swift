@@ -315,13 +315,13 @@ struct DriverTripDetailsView: View {
         }
         .fullScreenCover(isPresented: $showActiveTripView) {
             NavigationView {
-                ActiveTripView(trip: trip, isDriver: true)
+                ActiveTripView(trip: trip, isDriver: true, initialPassengers: passengers)
                     .environmentObject(authVM)
             }
         }
         .fullScreenCover(isPresented: $showSimulationView) {
             NavigationView {
-                ActiveTripView(trip: trip, isDriver: true, isSimulationMode: true)
+                ActiveTripView(trip: trip, isDriver: true, isSimulationMode: true, initialPassengers: passengers)
                     .environmentObject(authVM)
             }
         }

@@ -27,6 +27,7 @@ class LocationTrackingService: NSObject, ObservableObject {
     private var isSimulating = false
     private var simulationSendsToBackend = true
     private var simulationUpdatesDriverFeedOnly = false
+    private var simulationRouteCache: [String: [CLLocationCoordinate2D]] = [:]
 
     // CADisplayLink-based smooth interpolation
     private var displayLink: CADisplayLink?
@@ -314,11 +315,21 @@ class LocationTrackingService: NSObject, ObservableObject {
         return points
     }
 
+    private func routeCacheKey(_ a: CLLocationCoordinate2D, _ b: CLLocationCoordinate2D) -> String {
+        func r(_ v: Double) -> Double { (v * 10_000).rounded() / 10_000 }
+        return "\(r(a.latitude)),\(r(a.longitude))|\(r(b.latitude)),\(r(b.longitude))"
+    }
+
     private func generateRoutedPoints(
         from start: CLLocationCoordinate2D,
         to end: CLLocationCoordinate2D,
         fallbackSteps: Int
     ) async -> [CLLocationCoordinate2D] {
+        let key = routeCacheKey(start, end)
+        if let cached = simulationRouteCache[key] {
+            return densifyRoute(cached, targetCount: max(fallbackSteps, 40))
+        }
+
         let request = MKDirections.Request()
         request.source = MKMapItem(placemark: MKPlacemark(coordinate: start))
         request.destination = MKMapItem(placemark: MKPlacemark(coordinate: end))
@@ -330,6 +341,7 @@ class LocationTrackingService: NSObject, ObservableObject {
             if let route = response.routes.first {
                 let rawPoints = route.polyline.coordinates
                 if rawPoints.count >= 2 {
+                    simulationRouteCache[key] = rawPoints
                     return densifyRoute(rawPoints, targetCount: max(fallbackSteps, 40))
                 }
             }
