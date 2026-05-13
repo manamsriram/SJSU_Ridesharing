@@ -374,6 +374,7 @@ struct DriverHomeView: View {
     private func refreshDashboardData() async {
         guard let id = authVM.currentUser?.id else { return }
         await profileVM.loadDriverTrips(driverId: id)
+        await profileVM.loadDriverBookings(driverId: id)
         await profileVM.loadEarnings(userId: id)
         await refreshNotificationBadge()
 
@@ -501,8 +502,8 @@ struct DriverHomeView: View {
                            label: "Rating", color: .brandOrange)
             Divider().frame(height: 44)
             DriverStatCard(icon: "person.2.fill",
-                           value: "\(profileVM.earnings?.tripsActive ?? 0)",
-                           label: "Active Trips", color: .brand)
+                           value: "\(profileVM.tripsWithPassengersCount)",
+                           label: "With Passengers", color: .brand)
             Divider().frame(height: 44)
             DriverStatCard(icon: "car.fill",
                            value: "\(user.seatsAvailable ?? 0)",

@@ -195,9 +195,6 @@ struct DriverTripDetailsView: View {
                         )
                     }
 
-                    // Trip details card
-                    tripDetailsCard
-
                     // Stats card
                     statsCard
 
@@ -347,45 +344,6 @@ struct DriverTripDetailsView: View {
         }
     }
 
-    private var tripDetailsCard: some View {
-        VStack(spacing: 16) {
-            detailRow(
-                icon: "mappin.circle.fill",
-                iconColor: .brand,
-                title: "Start",
-                value: trip.origin
-            )
-            Divider()
-            detailRow(
-                icon: "location.fill",
-                iconColor: .brandGreen,
-                title: "Drop-off",
-                value: trip.destination
-            )
-            Divider()
-            detailRow(
-                icon: "clock",
-                iconColor: .textSecondary,
-                title: "Departure",
-                value: formatDateTime(trip.departureTime)
-            )
-            Divider()
-            detailRow(
-                icon: "person.2.fill",
-                iconColor: .textSecondary,
-                title: "Seats Available",
-                value: "\(trip.seatsAvailable)"
-            )
-        }
-        .padding(16)
-        .background(Color.cardBackground)
-        .cornerRadius(16)
-        .overlay(
-            RoundedRectangle(cornerRadius: 16)
-                .strokeBorder(DesignSystem.Colors.border.opacity(0.7), lineWidth: 1)
-        )
-    }
-
     private func detailRow(icon: String, iconColor: Color, title: String, value: String) -> some View {
         HStack(spacing: 12) {
             Image(systemName: icon)
@@ -422,6 +380,20 @@ struct DriverTripDetailsView: View {
                 iconColor: .brandGreen,
                 title: "Estimated Earnings",
                 value: String(format: "$%.2f", totalEarnings)
+            )
+            Divider()
+            detailRow(
+                icon: "clock",
+                iconColor: .textSecondary,
+                title: "Departure",
+                value: formatDateTime(trip.departureTime)
+            )
+            Divider()
+            detailRow(
+                icon: "person.2.fill",
+                iconColor: .textSecondary,
+                title: "Seats Available",
+                value: "\(trip.seatsAvailable)"
             )
             Divider()
             HStack(spacing: 12) {

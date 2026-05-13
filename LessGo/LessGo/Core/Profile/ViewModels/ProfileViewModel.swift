@@ -8,6 +8,7 @@ class ProfileViewModel: ObservableObject {
     @Published var ratings: [Rating] = []
     @Published var stats: UserStats?
     @Published var driverTrips: [Trip] = []
+    @Published var driverBookings: [Booking] = []
     @Published var isLoading = false
     @Published var isSaving = false
     @Published var errorMessage: String?
@@ -68,6 +69,27 @@ class ProfileViewModel: ObservableObject {
 
     var vehiclePickerIsActive: Bool {
         !pickerMake.isEmpty && !pickerModel.isEmpty
+    }
+
+    // Count of unique trips that have bookings (pending, approved, or completed)
+    var tripsWithPassengersCount: Int {
+        let cutoff = Date().addingTimeInterval(-24 * 3600)
+        let validBookings = driverBookings.filter { booking in
+            // Filter out cancelled/rejected bookings older than 24h
+            if booking.bookingState == .cancelled || booking.bookingState == .rejected {
+                return booking.updatedAt >= cutoff
+            }
+            // Keep completed bookings visible for 24h
+            if booking.bookingState == .completed {
+                return booking.updatedAt >= cutoff
+            }
+            // Hide bookings whose trip departed more than 24 hours ago
+            if let departure = booking.trip?.departureTime, departure < cutoff {
+                return false
+            }
+            return true
+        }
+        return Set(validBookings.compactMap { $0.trip?.id }).count
     }
 
     private let vehicleService = VehicleService.shared
@@ -303,6 +325,20 @@ class ProfileViewModel: ObservableObject {
             errorMessage = (error as? NetworkError)?.userMessage ?? "Something went wrong. Pull down to refresh"
             // Clear trips to ensure UI shows empty state
             driverTrips = []
+        }
+    }
+
+    // MARK: - Load Driver Bookings
+
+    func loadDriverBookings(driverId: String) async {
+        do {
+            let response = try await BookingService.shared.listBookings(asDriver: true)
+            driverBookings = response.bookings
+        } catch {
+            #if DEBUG
+            print("[ProfileViewModel] Failed to load driver bookings: \(error)")
+            #endif
+            driverBookings = []
         }
     }
 
