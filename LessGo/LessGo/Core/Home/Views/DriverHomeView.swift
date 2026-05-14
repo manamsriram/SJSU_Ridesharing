@@ -16,6 +16,7 @@ struct DriverHomeView: View {
 
     // ── Posted rides navigation ────────────────────────────────────────────────
     @State private var showCreateTrip = false
+    @State private var upcomingTripDestination: Trip? = nil
 
     // ── Notifications ──────────────────────────────────────────────────────────
     @State private var showAccountMenu = false
@@ -63,34 +64,36 @@ struct DriverHomeView: View {
 
     // ── Body ───────────────────────────────────────────────────────────────────
 
+    // MARK: - Computed helpers for new layout
+
+    private var pendingBookingCount: Int {
+        profileVM.driverBookings.filter { $0.bookingState == .pending }.count
+    }
+
+    private var upcomingTrips: [Trip] {
+        let now = Date()
+        let cutoff = now.addingTimeInterval(2 * 24 * 3600)
+        return profileVM.driverTrips
+            .filter { $0.status == .pending && $0.departureTime >= now && $0.departureTime <= cutoff }
+            .sorted { $0.departureTime < $1.departureTime }
+    }
+
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ScrollView {
-                VStack(spacing: 20) {
+                VStack(spacing: 16) {
                     dashboardHeader
                         .padding(.horizontal, AppConstants.pagePadding)
                         .padding(.top, 14)
 
-                    // Post a Ride button
                     postRideButton
                         .padding(.horizontal, AppConstants.pagePadding)
 
-                    if let user = authVM.currentUser {
-                        statsRow(user: user)
-                            .padding(.horizontal, AppConstants.pagePadding)
-                            .staggeredAppear(index: 0)
-                    }
-
-                    if !hasCompletedFirstTrip {
-                        howItWorksSection
-                            .padding(.horizontal, AppConstants.pagePadding)
-                    }
-
-                    earningsTodayCard
+                    statsGrid
                         .padding(.horizontal, AppConstants.pagePadding)
 
-                    // Extra space so tab bar (and optional active-ride banner) never
-                    // obscure the last card. 160 pt clears both.
+                    upcomingRidesSection
+
                     Spacer().frame(height: 160)
                 }
             }
@@ -273,103 +276,195 @@ struct DriverHomeView: View {
         .padding(.bottom, 90) // clears the custom tab bar (~88 pt incl. safe area)
     }
 
-    // MARK: - How It Works Section
+    // MARK: - Stats Grid (2-column)
 
-    private var howItWorksSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("How it works")
-                .font(.system(size: 18, weight: .bold))
-                .foregroundColor(.textPrimary)
-
-            VStack(spacing: 0) {
-                howItWorksRow(
-                    icon: "bell.badge",
-                    title: "Wait for a ride request",
-                    subtitle: "We'll notify you instantly when a rider is matched to you"
-                )
-                Divider()
-                    .padding(.leading, 74)
-                howItWorksRow(
-                    icon: "car.fill",
-                    title: "Accept and pick up",
-                    subtitle: "Accept the request and navigate to your passenger"
-                )
+    private var statsGrid: some View {
+        HStack(alignment: .top, spacing: 12) {
+            totalEarningsCard
+            VStack(spacing: 12) {
+                awaitingApprovalCard
+                driverRatingCard
             }
-            .background(Color.cardBackground)
-            .cornerRadius(16)
-            .shadow(color: .black.opacity(0.06), radius: 10, x: 0, y: 4)
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private var totalEarningsCard: some View {
+        let sparklineValues = profileVM.earnings?.dailyEarnings.map(\.amount) ?? []
+        let total = profileVM.earnings?.totalEarned ?? 0
+        return VStack(alignment: .leading, spacing: 8) {
+            Text("Total Earnings")
+                .font(.system(size: 14, weight: .medium))
+                .foregroundColor(.textSecondary)
+            Text(total, format: .currency(code: "USD"))
+                .font(.system(size: 22, weight: .bold, design: .rounded))
+                .foregroundColor(.brandTeal)
+                .minimumScaleFactor(0.7)
+                .lineLimit(1)
+            Spacer()
+            if sparklineValues.count == 7 {
+                EarningsSparklineView(values: sparklineValues)
+                    .frame(height: 56)
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, minHeight: 140, alignment: .topLeading)
+        .background(Color.cardBackground)
+        .cornerRadius(DesignSystem.CornerRadius.card)
+        .shadow(color: .black.opacity(0.08), radius: 10, x: 0, y: 4)
+    }
+
+    private var awaitingApprovalCard: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("Awaiting Approval")
+                .font(.system(size: 13, weight: .medium))
+                .foregroundColor(.textSecondary)
+            Text("\(pendingBookingCount)")
+                .font(.system(size: 28, weight: .bold, design: .rounded))
+                .foregroundColor(.brandTeal)
+            Text("Passenger requests")
+                .font(.system(size: 11))
+                .foregroundColor(.textSecondary)
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+        .background(Color.cardBackground)
+        .cornerRadius(DesignSystem.CornerRadius.card)
+        .shadow(color: .black.opacity(0.08), radius: 10, x: 0, y: 4)
+    }
+
+    private var driverRatingCard: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("Driver Rating")
+                .font(.system(size: 13, weight: .medium))
+                .foregroundColor(.textSecondary)
+            HStack(spacing: 4) {
+                Text(String(format: "%.1f", authVM.currentUser?.rating ?? 0.0))
+                    .font(.system(size: 28, weight: .bold, design: .rounded))
+                    .foregroundColor(.brandTeal)
+                Image(systemName: "star.fill")
+                    .font(.system(size: 18))
+                    .foregroundColor(.brandTeal)
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+        .background(Color.cardBackground)
+        .cornerRadius(DesignSystem.CornerRadius.card)
+        .shadow(color: .black.opacity(0.08), radius: 10, x: 0, y: 4)
+    }
+
+    // MARK: - Upcoming Rides Section
+
+    private var upcomingRidesSection: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("Upcoming Scheduled Rides")
+                .font(.system(size: 17, weight: .bold))
+                .foregroundColor(.textPrimary)
+                .padding(.horizontal, 16)
+                .padding(.top, 16)
+                .padding(.bottom, 12)
+
+            if upcomingTrips.isEmpty {
+                Text("No rides in the next 2 days")
+                    .font(.system(size: 14))
+                    .foregroundColor(.textSecondary)
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 16)
+            } else {
+                ForEach(Array(upcomingTrips.enumerated()), id: \.element.id) { idx, trip in
+                    Button(action: { upcomingTripDestination = trip }) {
+                        upcomingRideRow(trip: trip)
+                    }
+                    .buttonStyle(.plain)
+
+                    if idx < upcomingTrips.count - 1 {
+                        Divider()
+                            .padding(.leading, 16)
+                    }
+                }
+                .padding(.bottom, 4)
+            }
+        }
+        .background(Color.cardBackground)
+        .cornerRadius(DesignSystem.CornerRadius.card)
+        .shadow(color: .black.opacity(0.08), radius: 10, x: 0, y: 4)
+        .navigationDestination(isPresented: Binding(
+            get: { upcomingTripDestination != nil },
+            set: { if !$0 { upcomingTripDestination = nil } }
+        )) {
+            if let trip = upcomingTripDestination {
+                DriverTripDetailsView(trip: trip)
+                    .environmentObject(authVM)
+            }
         }
     }
 
-    private func howItWorksRow(icon: String, title: String, subtitle: String) -> some View {
-        HStack(spacing: 14) {
-            ZStack {
-                Circle()
-                    .fill(Color.brand.opacity(0.10))
-                    .frame(width: 44, height: 44)
-                Image(systemName: icon)
-                    .font(.system(size: 18))
-                    .foregroundColor(.brand)
-            }
+    private func upcomingRideRow(trip: Trip) -> some View {
+        HStack(spacing: 0) {
             VStack(alignment: .leading, spacing: 3) {
-                Text(title)
-                    .font(.system(size: 15, weight: .semibold))
+                Text(trip.departureTime.upcomingLabel)
+                    .font(.system(size: 14, weight: .semibold))
                     .foregroundColor(.textPrimary)
-                Text(subtitle)
-                    .font(.system(size: 12))
-                    .foregroundColor(.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                HStack(spacing: 4) {
+                    Text("\(trip.origin) to \(trip.destination)")
+                        .font(.system(size: 13))
+                        .foregroundColor(.textSecondary)
+                        .lineLimit(1)
+                    if let count = trip.pendingBookingCount, count > 0 {
+                        Text("•")
+                            .foregroundColor(.textTertiary)
+                        Image(systemName: "person.fill")
+                            .font(.system(size: 11))
+                            .foregroundColor(.textSecondary)
+                        Text("\(count) passenger\(count == 1 ? "" : "s")")
+                            .font(.system(size: 13))
+                            .foregroundColor(.textSecondary)
+                    }
+                }
             }
             Spacer()
+            Image(systemName: "chevron.right")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundColor(.textTertiary)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 14)
     }
 
-    // MARK: - Earnings Today Card
+    // MARK: - Post Ride Button
 
-    private var earningsTodayCard: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Earnings Today")
-                .font(.system(size: 18, weight: .bold))
-                .foregroundColor(.textPrimary)
-
-            HStack(spacing: 0) {
-                VStack(spacing: 6) {
-                    let todayTrips = profileVM.earnings?.todayTrips ?? 0
-                    Text(todayTrips == 0 ? "–" : "\(todayTrips)")
-                        .font(.system(size: 28, weight: .bold, design: .rounded))
-                        .foregroundColor(todayTrips == 0 ? .textSecondary : .textPrimary)
-                    Text(todayTrips == 1 ? "trip" : "trips")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundColor(.textSecondary)
+    private var postRideButton: some View {
+        Button(action: { showCreateTrip = true }) {
+            HStack(spacing: 12) {
+                ZStack {
+                    Circle()
+                        .fill(Color.white.opacity(0.18))
+                        .frame(width: 44, height: 44)
+                    Image(systemName: "plus.circle.fill")
+                        .font(.system(size: 20, weight: .semibold))
+                        .foregroundColor(.white)
                 }
-                .frame(maxWidth: .infinity)
-
-                Divider().frame(height: 44)
-
-                VStack(spacing: 6) {
-                    let todayEarned = profileVM.earnings?.todayEarned ?? 0
-                    Text(todayEarned == 0
-                         ? "$0.00"
-                         : String(format: "$%.2f", todayEarned))
-                        .font(.system(size: 28, weight: .bold, design: .rounded))
-                        .foregroundColor(todayEarned == 0 ? .textSecondary : .brandGreen)
-                    Text("earned")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundColor(.textSecondary)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Post a Ride")
+                        .font(.system(size: 16, weight: .bold))
+                        .foregroundColor(.white)
+                    Text("Create a scheduled trip")
+                        .font(.system(size: 12))
+                        .foregroundColor(.white.opacity(0.80))
                 }
-                .frame(maxWidth: .infinity)
+                Spacer()
             }
-            .padding(.vertical, 20)
-            .padding(.horizontal, 4)
-            .background(Color.cardBackground)
-            .cornerRadius(16)
-            .shadow(color: .black.opacity(0.06), radius: 10, x: 0, y: 4)
+            .padding(.horizontal, 18)
+            .padding(.vertical, 16)
+            .background(
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .fill(Color.brandTeal)
+                    .shadow(color: Color.brandTeal.opacity(0.40), radius: 12, x: 0, y: 4)
+            )
         }
+        .buttonStyle(.plain)
     }
-
-    // MARK: - Data Loading
 
     private func refreshDashboardData() async {
         guard let id = authVM.currentUser?.id else { return }
@@ -494,69 +589,6 @@ struct DriverHomeView: View {
         )
     }
 
-    // MARK: - Stats Row
-
-    private func statsRow(user: User) -> some View {
-        HStack(spacing: 0) {
-            DriverStatCard(icon: "star.fill", value: String(format: "%.1f", Double(user.rating)),
-                           label: "Rating", color: .brandOrange)
-            Divider().frame(height: 44)
-            DriverStatCard(icon: "person.2.fill",
-                           value: "\(profileVM.tripsWithPassengersCount)",
-                           label: "With Passengers", color: .brand)
-            Divider().frame(height: 44)
-            DriverStatCard(icon: "car.fill",
-                           value: "\(user.seatsAvailable ?? 0)",
-                           label: "Seats", color: .brandGreen)
-        }
-        .padding(.vertical, 8)
-        .padding(.horizontal, 4)
-        .padding(.vertical, 4)
-        .luxuryCard(cornerRadius: 22)
-    }
-
-    // MARK: - Post Ride Button
-
-    private var postRideButton: some View {
-        Button(action: { showCreateTrip = true }) {
-            HStack(spacing: 12) {
-                ZStack {
-                    Circle()
-                        .fill(Color.white.opacity(0.15))
-                        .frame(width: 44, height: 44)
-                    Image(systemName: "plus.circle.fill")
-                        .font(.system(size: 20, weight: .semibold))
-                        .foregroundColor(.white)
-                }
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Post a Ride")
-                        .font(.system(size: 16, weight: .bold))
-                        .foregroundColor(.white)
-                    Text("Create a scheduled trip for riders to book")
-                        .font(.system(size: 12))
-                        .foregroundColor(.white.opacity(0.75))
-                }
-                Spacer()
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundColor(.white.opacity(0.6))
-            }
-            .padding(.horizontal, 18)
-            .padding(.vertical, 16)
-            .background(
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .fill(
-                        LinearGradient(
-                            colors: [Color.brand, Color.brand.opacity(0.85)],
-                            startPoint: .leading,
-                            endPoint: .trailing
-                        )
-                    )
-                    .shadow(color: Color.brand.opacity(0.35), radius: 12, x: 0, y: 4)
-            )
-        }
-        .buttonStyle(.plain)
-    }
 }
 
 // MARK: - Driver Notifications Sheet
@@ -682,7 +714,6 @@ private struct DriverNotificationsSheet: View {
             .navigationBarHidden(true)
             .task { await loadNotifications() }
         }
-        .navigationViewStyle(.stack)
     }
 
     private func driverNotificationRow(_ item: AppNotificationItem) -> some View {

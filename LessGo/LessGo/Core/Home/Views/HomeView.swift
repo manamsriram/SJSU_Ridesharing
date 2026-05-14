@@ -122,17 +122,17 @@ private struct CustomTabBar: View {
                         HStack(spacing: 8) {
                             ZStack {
                                 Circle()
-                                    .fill(selectedTab == item.tab ? DesignSystem.Colors.accentLime.opacity(0.18) : Color.clear)
+                                    .fill(selectedTab == item.tab ? Color.brandTeal.opacity(0.18) : Color.clear)
                                     .frame(width: 30, height: 30)
                                 Image(systemName: selectedTab == item.tab ? item.selectedIcon : item.icon)
                                     .font(.system(size: 18, weight: .semibold))
-                                    .foregroundColor(selectedTab == item.tab ? DesignSystem.Colors.onAccentLime : .white.opacity(0.65))
+                                    .foregroundColor(selectedTab == item.tab ? Color.brandTeal : .white.opacity(0.65))
                             }
 
                             if selectedTab == item.tab {
                                 Text(item.label)
                                     .font(.system(size: 13, weight: .bold, design: .rounded))
-                                    .foregroundColor(DesignSystem.Colors.onAccentLime)
+                                    .foregroundColor(Color.brandTeal)
                                     .transition(.opacity.combined(with: .move(edge: .trailing)))
                             }
                         }
@@ -143,7 +143,7 @@ private struct CustomTabBar: View {
                             Capsule()
                                 .fill(
                                     selectedTab == item.tab
-                                    ? AnyShapeStyle(DesignSystem.Colors.selectedTabBackground)
+                                    ? AnyShapeStyle(Color.brandTeal.opacity(0.12))
                                     : AnyShapeStyle(Color.clear)
                                 )
                         )

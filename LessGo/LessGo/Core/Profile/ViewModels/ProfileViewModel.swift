@@ -414,6 +414,11 @@ class ProfileViewModel: ObservableObject {
 
     // MARK: - Driver Earnings
 
+    struct DailyEarning: Codable {
+        let date: String
+        let amount: Double
+    }
+
     struct DriverEarnings: Codable {
         let totalEarned: Double
         let tripsCompleted: Int
@@ -421,6 +426,7 @@ class ProfileViewModel: ObservableObject {
         let thisMonthEarned: Double
         let todayEarned: Double
         let todayTrips: Int
+        let dailyEarnings: [DailyEarning]
 
         enum CodingKeys: String, CodingKey {
             case totalEarned = "total_earned"
@@ -429,6 +435,7 @@ class ProfileViewModel: ObservableObject {
             case thisMonthEarned = "this_month_earned"
             case todayEarned = "today_earned"
             case todayTrips = "today_trips"
+            case dailyEarnings = "daily_earnings"
         }
     }
 

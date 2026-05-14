@@ -78,6 +78,18 @@ extension Date {
         return "Leaving in \(hours)h \(remaining)m"
     }
 
+    // MARK: - Upcoming label (e.g. "Today, 8:00 AM" / "Tomorrow, 5:30 PM" / "Friday, 9:00 AM")
+    var upcomingLabel: String {
+        let cal = Calendar.autoupdatingCurrent
+        let formatter = Self.displayFormatter()
+        formatter.timeStyle = .short
+        let timeStr = formatter.string(from: self)
+        if cal.isDateInToday(self) { return "Today, \(timeStr)" }
+        if cal.isDateInTomorrow(self) { return "Tomorrow, \(timeStr)" }
+        formatter.dateFormat = "EEEE, h:mm a"
+        return formatter.string(from: self)
+    }
+
     // MARK: - API Format
     var iso8601: String {
         let formatter = ISO8601DateFormatter()
