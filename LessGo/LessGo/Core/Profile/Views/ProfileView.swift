@@ -584,12 +584,9 @@ struct ProfileView: View {
                 ProfileStat(value: String(format: "%.1f", Double(authVM.currentUser?.rating ?? 0)),
                             label: "Rating", icon: "star.fill", color: .brandOrange)
                     .staggeredAppear(index: 0)
-                ProfileStat(value: "\(vm.stats?.totalTripsAsDriver ?? 0)",
-                            label: "Trips", icon: "car.fill", color: .brand)
-                    .staggeredAppear(index: 1)
                 ProfileStat(value: "\(vm.ratings.count)",
                             label: "Reviews", icon: "bubble.fill", color: .brandGreen)
-                    .staggeredAppear(index: 2)
+                    .staggeredAppear(index: 1)
             }
         }
         .padding(.horizontal, AppConstants.pagePadding)
@@ -636,7 +633,7 @@ struct ProfileView: View {
 
                 HStack {
                     VStack(spacing: 4) {
-                        Text("\(vm.earnings?.tripsCompleted ?? 0)")
+                        Text("\(vm.earnings?.tripsCompleted ?? vm.stats?.tripsCompleted ?? 0)")
                             .font(.system(size: 18, weight: .bold))
                             .foregroundColor(.textPrimary)
                         Text("Completed")
@@ -648,7 +645,7 @@ struct ProfileView: View {
                     Divider().frame(height: 30)
 
                     VStack(spacing: 4) {
-                        Text("\(vm.earnings?.tripsActive ?? 0)")
+                        Text("\(vm.earnings?.tripsActive ?? vm.stats?.tripsActive ?? 0)")
                             .font(.system(size: 18, weight: .bold))
                             .foregroundColor(.brand)
                         Text("Active")

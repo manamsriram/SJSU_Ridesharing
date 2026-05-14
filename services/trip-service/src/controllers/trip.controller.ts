@@ -492,9 +492,9 @@ export const updateTripState = async (req: AuthRequest, res: Response): Promise<
           );
         }
 
-        // Capture payments (partial) for each approved booking
+        // Capture payments (partial) for each approved or completed booking
         const toCapture = bookingsForSettle.filter(
-          (b: any) => b.payment_intent_id && b.booking_state === 'approved'
+          (b: any) => b.payment_intent_id && ['approved', 'completed'].includes(b.booking_state)
         );
         for (const booking of toCapture) {
           const bookingId = booking.booking_id ?? booking.id;

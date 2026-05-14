@@ -218,6 +218,8 @@ export const getUserStats = async (
   total_ratings: number;
   average_rating: number;
   total_trips_as_driver?: number;
+  trips_completed?: number;
+  trips_active?: number;
   total_bookings_as_rider?: number;
 }> => {
   // Get user to check role
@@ -246,19 +248,17 @@ export const getUserStats = async (
   // If driver, get trip stats
   if (user.role === UserRole.Driver) {
     const tripStatsQuery = `
-      SELECT COUNT(DISTINCT t.trip_id) as total_trips
-      FROM trips t
-      WHERE t.driver_id = $1
-        AND EXISTS (
-          SELECT 1 FROM payments p
-          JOIN bookings b ON p.booking_id = b.booking_id
-          WHERE b.trip_id = t.trip_id
-            AND p.status = 'captured'
-        )
+      SELECT
+        COUNT(*) FILTER (WHERE status = 'completed') as trips_completed,
+        COUNT(*) FILTER (WHERE status = 'pending')   as trips_active
+      FROM trips
+      WHERE driver_id = $1
     `;
 
     const tripStats = await pool.query(tripStatsQuery, [userId]);
-    stats.total_trips_as_driver = parseInt(tripStats.rows[0].total_trips);
+    stats.trips_completed = parseInt(tripStats.rows[0].trips_completed);
+    stats.trips_active    = parseInt(tripStats.rows[0].trips_active);
+    stats.total_trips_as_driver = stats.trips_completed;
   }
 
   // Get booking stats (as rider)
@@ -390,6 +390,28 @@ export const getDriverEarnings = async (userId: string) => {
   `;
   const todayResult = await pool.query(todayQuery, [userId]);
 
+  const dailyQuery = `
+    SELECT
+      TO_CHAR(d.day, 'YYYY-MM-DD') AS date,
+      COALESCE(SUM(p.amount), 0)   AS amount
+    FROM generate_series(
+      CURRENT_DATE - INTERVAL '6 days',
+      CURRENT_DATE,
+      INTERVAL '1 day'
+    ) AS d(day)
+    LEFT JOIN payments p
+      ON DATE(p.updated_at) = d.day
+      AND p.status = 'captured'
+      AND p.booking_id IN (
+        SELECT b.booking_id FROM bookings b
+        JOIN trips t ON b.trip_id = t.trip_id
+        WHERE t.driver_id = $1
+      )
+    GROUP BY d.day
+    ORDER BY d.day ASC
+  `;
+  const dailyResult = await pool.query(dailyQuery, [userId]);
+
   return {
     total_earned: totalEarned,
     trips_completed: parseInt(completedTrips.rows[0].count),
@@ -397,6 +419,10 @@ export const getDriverEarnings = async (userId: string) => {
     this_month_earned: parseFloat(thisMonthResult.rows[0].month_total || 0),
     today_earned: parseFloat(todayResult.rows[0].today_total || 0),
     today_trips: parseInt(todayResult.rows[0].today_trips || 0),
+    daily_earnings: dailyResult.rows.map((r) => ({
+      date: r.date as string,
+      amount: parseFloat(r.amount),
+    })),
   };
 };
 

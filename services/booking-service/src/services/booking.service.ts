@@ -1186,10 +1186,11 @@ export const capturePayment = async (
     ).catch(() => {});
 
     await pool.query(
-      `UPDATE payments
-       SET status = 'captured', amount = $1, updated_at = current_timestamp
-       WHERE booking_id = $2`,
-      [capturedAmount, bookingId]
+      `INSERT INTO payments (booking_id, stripe_payment_intent_id, amount, status)
+       VALUES ($1, $2, $3, 'captured')
+       ON CONFLICT (stripe_payment_intent_id) DO UPDATE
+         SET status = 'captured', amount = $3, updated_at = current_timestamp`,
+      [bookingId, paymentIntentId, capturedAmount]
     ).catch(() => {});
   }
 

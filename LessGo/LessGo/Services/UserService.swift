@@ -235,12 +235,16 @@ struct UserStats: Codable {
     let totalRatings: Int
     let averageRating: Double
     let totalTripsAsDriver: Int?
+    let tripsCompleted: Int?
+    let tripsActive: Int?
     let totalBookingsAsRider: Int?
 
     enum CodingKeys: String, CodingKey {
         case totalRatings = "total_ratings"
         case averageRating = "average_rating"
         case totalTripsAsDriver = "total_trips_as_driver"
+        case tripsCompleted = "trips_completed"
+        case tripsActive = "trips_active"
         case totalBookingsAsRider = "total_bookings_as_rider"
     }
 }
