@@ -122,11 +122,17 @@ class BookingViewModel: ObservableObject {
     // MARK: - Grouped Bookings (Driver View)
 
     /// Groups driver-view bookings by trip_id, preserving the most-recent booking order.
+    /// Hides trips that are completed or cancelled and older than 24 hours.
     var bookingsGroupedByTrip: [(trip: Trip, bookings: [Booking])] {
+        let cutoff = Date().addingTimeInterval(-24 * 3600)
         var seen = Set<String>()
         var groups: [(trip: Trip, bookings: [Booking])] = []
         for booking in bookings {
             guard let trip = booking.trip else { continue }
+            // Hide completed/cancelled trips older than 24h
+            if (trip.status == .completed || trip.status == .cancelled) && trip.updatedAt < cutoff {
+                continue
+            }
             if seen.contains(trip.id) {
                 if let idx = groups.firstIndex(where: { $0.trip.id == trip.id }) {
                     groups[idx].bookings.append(booking)
