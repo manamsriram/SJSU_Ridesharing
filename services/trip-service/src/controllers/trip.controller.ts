@@ -599,6 +599,53 @@ export const updateTripState = async (req: AuthRequest, res: Response): Promise<
     successResponse(res, { trip: updatedTrip, settlement }, 'Trip state updated successfully');
   } catch (error) {
     console.error('Update trip state error:', error);
+    if (error instanceof AppError) {
+      errorResponse(res, error.message, error.statusCode);
+      return;
+    }
+    if (error instanceof Error) {
+      errorResponse(res, error.message, 400);
+      return;
+    }
+    throw new AppError('Failed to update trip state', 500);
+  }
+};
+
+/**
+ * Debug-only: Update trip state without ownership check or rider confirmation gate.
+ * PUT /trips/:id/state/debug
+ * Not available in production (NODE_ENV check in routes).
+ */
+export const updateTripStateDebug = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const { id } = req.params;
+    const { status } = req.body;
+
+    if (!req.user) {
+      errorResponse(res, 'Authentication required', 401);
+      return;
+    }
+
+    const validStates = ['pending', 'en_route', 'arrived', 'in_progress', 'completed', 'cancelled'];
+    if (!validStates.includes(status)) {
+      errorResponse(res, 'Invalid trip status', 400);
+      return;
+    }
+
+    const trip = await tripService.getTripById(id);
+    if (!trip) {
+      errorResponse(res, 'Trip not found', 404);
+      return;
+    }
+
+    // Debug endpoint: skip driver-ownership check and confirmation gate
+    const updatedTrip = await tripService.updateTripStateForce(id, status as TripStatus);
+    successResponse(res, updatedTrip, `Trip state updated to ${status} (debug)`);
+  } catch (error) {
+    if (error instanceof AppError) {
+      errorResponse(res, error.message, error.statusCode);
+      return;
+    }
     if (error instanceof Error) {
       errorResponse(res, error.message, 400);
       return;

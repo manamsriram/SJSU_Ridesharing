@@ -642,12 +642,49 @@ export const cancelTrip = async (tripId: string, driverId: string): Promise<Trip
 };
 
 /**
- * Update trip state (for real-time ride tracking)
- * @param tripId Trip UUID
- * @param newStatus New trip status
- * @returns Updated trip
+ * Check that all nearby approved riders have confirmed pickup before advancing the trip.
+ * Throws AppError(409) if any rider within 50 m has not yet confirmed.
  */
-export const updateTripState = async (tripId: string, newStatus: TripStatus): Promise<any> => {
+const checkRiderConfirmations = async (tripId: string): Promise<void> => {
+  // Get latest driver location (PostGIS geometry → lat/lng)
+  const locResult = await pool.query(
+    `SELECT ST_Y(location::geometry) as latitude,
+            ST_X(location::geometry) as longitude
+     FROM trip_locations
+     WHERE trip_id = $1 ORDER BY created_at DESC LIMIT 1`,
+    [tripId]
+  );
+  if (locResult.rowCount === 0) return; // no location recorded yet — don't block
+
+  const { latitude, longitude } = locResult.rows[0];
+
+  // Get approved bookings that have shared a pickup location
+  const bookingsResult = await pool.query(
+    `SELECT booking_id, pickup_location, rider_pickup_confirmed_at
+     FROM bookings
+     WHERE trip_id = $1
+       AND booking_state = 'approved'
+       AND pickup_location IS NOT NULL
+       AND deleted_at IS NULL`,
+    [tripId]
+  );
+
+  const nearbyUnconfirmed = bookingsResult.rows.filter((b: any) => {
+    const pickup = b.pickup_location;
+    const dist = haversineMeters(latitude, longitude, pickup.lat, pickup.lng);
+    return dist <= 50 && b.rider_pickup_confirmed_at == null;
+  });
+
+  if (nearbyUnconfirmed.length > 0) {
+    throw new AppError('Waiting for rider confirmation before advancing', 409);
+  }
+};
+
+/**
+ * Core trip state update — performs the DB write without any confirmation gate.
+ * Private helper; callers are updateTripState and updateTripStateForce.
+ */
+const _performTripStateUpdate = async (tripId: string, newStatus: TripStatus): Promise<any> => {
   // Determine which timestamp to update based on state
   let timestampField = '';
 
@@ -692,6 +729,38 @@ export const updateTripState = async (tripId: string, newStatus: TripStatus): Pr
     origin_point: { lat: updatedTrip.origin_lat, lng: updatedTrip.origin_lng },
     destination_point: { lat: updatedTrip.destination_lat, lng: updatedTrip.destination_lng },
   };
+};
+
+/**
+ * Update trip state (for real-time ride tracking)
+ * Gates arrived → en_route and arrived → in_progress on rider pickup confirmation.
+ * @param tripId Trip UUID
+ * @param newStatus New trip status
+ * @returns Updated trip
+ */
+export const updateTripState = async (tripId: string, newStatus: TripStatus): Promise<any> => {
+  // Gate arrived → en_route and arrived → in_progress on rider confirmation
+  if (newStatus === TripStatus.EnRoute || newStatus === TripStatus.InProgress) {
+    const currentResult = await pool.query(
+      `SELECT status FROM trips WHERE trip_id = $1`, [tripId]
+    );
+    const currentStatus = currentResult.rows[0]?.status;
+    if (currentStatus === 'arrived') {
+      await checkRiderConfirmations(tripId);
+    }
+  }
+
+  return _performTripStateUpdate(tripId, newStatus);
+};
+
+/**
+ * Force-update trip state without rider confirmation gate — debug/testing use only.
+ * @param tripId Trip UUID
+ * @param newStatus New trip status
+ * @returns Updated trip
+ */
+export const updateTripStateForce = async (tripId: string, newStatus: TripStatus): Promise<any> => {
+  return _performTripStateUpdate(tripId, newStatus);
 };
 
 /**

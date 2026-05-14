@@ -487,6 +487,32 @@ export const capturePayment = async (req: AuthRequest, res: Response): Promise<v
 };
 
 /**
+ * Confirm rider pickup (rider only)
+ * POST /api/bookings/:id/confirm-pickup
+ */
+export const confirmPickup = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const { id } = req.params;
+    if (!req.user) {
+      errorResponse(res, 'Authentication required', 401);
+      return;
+    }
+    const result = await bookingService.confirmRiderPickup(id, req.user.userId);
+    successResponse(res, result, 'Pickup confirmed');
+  } catch (error) {
+    if (error instanceof AppError) {
+      errorResponse(res, error.message, error.statusCode);
+      return;
+    }
+    if (error instanceof Error) {
+      errorResponse(res, error.message, 400);
+      return;
+    }
+    throw new AppError('Failed to confirm pickup', 500);
+  }
+};
+
+/**
  * Reject a booking (driver only)
  * PATCH /api/bookings/:id/reject
  */

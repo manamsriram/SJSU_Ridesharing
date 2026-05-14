@@ -53,6 +53,7 @@ struct ActiveTripView: View {
     @State private var allPassengers: [BookingWithRider] = []
     @State private var simulationRouteStops: [SimulationRouteStop] = []
     @State private var currentSimulationStep: Int = 0
+    @State private var currentPickupIndex: Int = 0
     @State private var showSimulationDebug = false
 
     // Debug visibility
@@ -578,6 +579,11 @@ struct ActiveTripView: View {
                     tripProgressTimeline
                     Divider()
                     actionButtons
+                    #if DEBUG
+                    if !isDriver {
+                        riderDebugPanel
+                    }
+                    #endif
                     debugTestingControls
                 }
                 .padding(.horizontal, 18)
@@ -719,8 +725,58 @@ struct ActiveTripView: View {
                     Task { await updateState(to: .arrived) }
                 }
             case .arrived:
-                PrimaryButton(title: "Rider Picked Up - Start Ride", icon: "arrow.triangle.turn.up.right.circle.fill", isEnabled: !isUpdatingState) {
-                    Task { await updateState(to: .inProgress) }
+                let currentStopCoord: CLLocationCoordinate2D? = {
+                    let pairs = orderedPassengersWithPickups
+                    guard currentPickupIndex < pairs.count else { return nil }
+                    return pairs[currentPickupIndex].coordinate
+                }()
+                let ridersAtStop: [(passenger: BookingWithRider, coordinate: CLLocationCoordinate2D)] = {
+                    guard let stopCoord = currentStopCoord else { return [] }
+                    return orderedPassengersWithPickups.filter { pair in
+                        let dx = pair.coordinate.latitude - stopCoord.latitude
+                        let dy = pair.coordinate.longitude - stopCoord.longitude
+                        let distMeters = sqrt(dx * dx + dy * dy) * 111_000
+                        return distMeters <= 50
+                    }
+                }()
+                let allConfirmed = ridersAtStop.isEmpty || ridersAtStop.allSatisfy { $0.passenger.hasConfirmedPickup }
+
+                VStack(spacing: 10) {
+                    if !ridersAtStop.isEmpty && !allConfirmed {
+                        let confirmed = ridersAtStop.filter { $0.passenger.hasConfirmedPickup }.count
+                        let total = ridersAtStop.count
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("Waiting for riders to confirm (\(confirmed)/\(total))")
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundColor(.textSecondary)
+                            ForEach(ridersAtStop, id: \.passenger.id) { pair in
+                                HStack(spacing: 8) {
+                                    Image(systemName: pair.passenger.hasConfirmedPickup ? "checkmark.circle.fill" : "clock")
+                                        .foregroundColor(pair.passenger.hasConfirmedPickup ? .brandGreen : .brandGold)
+                                        .font(.system(size: 14))
+                                    Text(pair.passenger.riderName)
+                                        .font(.system(size: 14))
+                                        .foregroundColor(.textPrimary)
+                                    Spacer()
+                                    Text(pair.passenger.hasConfirmedPickup ? "In the car" : "Waiting...")
+                                        .font(.system(size: 12))
+                                        .foregroundColor(pair.passenger.hasConfirmedPickup ? .brandGreen : .textSecondary)
+                                }
+                            }
+                        }
+                        .padding(.horizontal, 4)
+                        .padding(.bottom, 4)
+                    }
+                    PrimaryButton(
+                        title: "Rider Picked Up - Start Ride",
+                        icon: "arrow.triangle.turn.up.right.circle.fill",
+                        isEnabled: allConfirmed && !isUpdatingState
+                    ) {
+                        Task {
+                            await updateState(to: .inProgress)
+                            await MainActor.run { currentPickupIndex += 1 }
+                        }
+                    }
                 }
             case .inProgress:
                 PrimaryButton(title: "Complete Trip", icon: "checkmark.circle.fill", isEnabled: !isUpdatingState) {
@@ -762,7 +818,36 @@ struct ActiveTripView: View {
             case .enRoute:
                 statusLabel(text: "Driver is on the way to you!", icon: "car.fill", color: .brand)
             case .arrived:
-                statusLabel(text: "Driver has arrived! Head to pickup.", icon: "location.fill", color: .brandGreen)
+                if let myBooking = booking {
+                    if !myBooking.hasConfirmedPickup {
+                        VStack(spacing: 8) {
+                            statusLabel(text: "Driver has arrived! Head to pickup.", icon: "location.fill", color: .brandGreen)
+                            PrimaryButton(title: "I'm in the Car", icon: "checkmark.circle.fill", isEnabled: true) {
+                                Task {
+                                    do {
+                                        try await BookingService.shared.confirmPickup(bookingId: myBooking.id)
+                                    } catch {
+                                        print("Confirm pickup error: \(error)")
+                                    }
+                                }
+                            }
+                            Text("Tap once you're seated and ready to go")
+                                .font(.system(size: 13))
+                                .foregroundColor(.textSecondary)
+                        }
+                    } else {
+                        HStack(spacing: 8) {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundColor(.brandGreen)
+                            Text("Confirmed — waiting for driver to start the ride")
+                                .font(.system(size: 15, weight: .semibold))
+                                .foregroundColor(.textPrimary)
+                        }
+                        .padding(.vertical, 8)
+                    }
+                } else {
+                    statusLabel(text: "Driver has arrived! Head to pickup.", icon: "location.fill", color: .brandGreen)
+                }
             case .inProgress:
                 statusLabel(text: "You're on your way!", icon: "arrow.triangle.turn.up.right.circle.fill", color: .brand)
             case .completed:
@@ -895,6 +980,64 @@ struct ActiveTripView: View {
             }
         }
     }
+
+    #if DEBUG
+    private var riderDebugPanel: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Rider Debug Panel")
+                .font(.system(size: 12, weight: .bold))
+                .foregroundColor(.textSecondary)
+            let stopCount = orderedPassengersWithPickups.count
+            Text("Stop \(currentPickupIndex + 1) of \(max(stopCount, 1))")
+                .font(.system(size: 11))
+                .foregroundColor(.textSecondary)
+            HStack(spacing: 8) {
+                Button("→ En Route") { Task { await simulateRiderStateDebug("en_route") } }
+                    .debugPill()
+                Button("→ Arrived") { Task { await simulateRiderStateDebug("arrived") } }
+                    .debugPill()
+            }
+            HStack(spacing: 8) {
+                Button("Confirm Pickup") {
+                    Task {
+                        if let bookingId = booking?.id {
+                            try? await BookingService.shared.confirmPickup(bookingId: bookingId)
+                        }
+                    }
+                }
+                .debugPill()
+                Button("→ In Progress") { Task { await simulateRiderStateDebug("in_progress") } }
+                    .debugPill()
+            }
+            Button("→ Completed") { Task { await simulateRiderStateDebug("completed") } }
+                .debugPill()
+        }
+        .padding(12)
+        .background(Color.black.opacity(0.06))
+        .cornerRadius(10)
+    }
+
+    private func simulateRiderStateDebug(_ status: String) async {
+        guard let url = URL(string: APIConfig.baseURL + "/trips/\(trip.id)/state/debug") else { return }
+        var req = URLRequest(url: url)
+        req.httpMethod = "PUT"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        if let token = KeychainManager.shared.getAccessToken() {
+            req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
+        req.httpBody = try? JSONEncoder().encode(["status": status])
+        _ = try? await URLSession.shared.data(for: req)
+        // Refresh trip state
+        do {
+            let response = try await tripService.getTrip(id: trip.id)
+            await MainActor.run {
+                withAnimation { tripStatus = response.status }
+            }
+        } catch {
+            print("Rider debug state refresh error: \(error)")
+        }
+    }
+    #endif
 
     private var debugTestingControls: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -1177,7 +1320,10 @@ struct ActiveTripView: View {
                 // Brief pause at intermediate stop before heading to next pickup.
                 await MainActor.run { withAnimation { tripStatus = .arrived } }
                 try? await Task.sleep(nanoseconds: 500_000_000)
-                await MainActor.run { withAnimation { tripStatus = .enRoute } }
+                await MainActor.run {
+                    withAnimation { tripStatus = .enRoute }
+                    currentPickupIndex = index + 1
+                }
             }
         }
 
@@ -1790,6 +1936,7 @@ struct ActiveTripView: View {
         allPassengers = []
         simulationRouteStops = []
         currentSimulationStep = 0
+        currentPickupIndex = 0
         simulationPickupCoord = nil
 
         let origin = trip.originPoint?.clLocationCoordinate2D ?? AppConstants.sjsuCoordinate

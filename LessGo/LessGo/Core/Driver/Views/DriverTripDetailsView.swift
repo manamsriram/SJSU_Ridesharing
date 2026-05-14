@@ -531,6 +531,18 @@ struct DriverTripDetailsView: View {
                             .background(Color.brandGold.opacity(0.12))
                             .cornerRadius(4)
                     }
+                    // Pickup confirmation badge
+                    let tripStatus = trip.status
+                    let isConfirmed = stop.passenger.hasConfirmedPickup
+                    if tripStatus == .inProgress || tripStatus == .completed {
+                        pickupStatusBadge(label: "Picked Up", icon: "checkmark.seal.fill", color: .brandGreen)
+                    } else if tripStatus == .arrived && isConfirmed {
+                        pickupStatusBadge(label: "Confirmed", icon: "checkmark.circle.fill", color: .brandGreen)
+                    } else if tripStatus == .arrived && !isConfirmed {
+                        pickupStatusBadge(label: "Waiting...", icon: "clock", color: .brandGold)
+                    } else if isConfirmed {
+                        pickupStatusBadge(label: "Ready", icon: "checkmark", color: .brand)
+                    }
                 }
                 Text(stop.address)
                     .font(.system(size: 13))
@@ -548,6 +560,18 @@ struct DriverTripDetailsView: View {
 
             Spacer()
         }
+    }
+
+    private func pickupStatusBadge(label: String, icon: String, color: Color) -> some View {
+        HStack(spacing: 3) {
+            Image(systemName: icon).font(.system(size: 9, weight: .semibold))
+            Text(label).font(.system(size: 10, weight: .semibold))
+        }
+        .foregroundColor(color)
+        .padding(.horizontal, 6)
+        .padding(.vertical, 2)
+        .background(color.opacity(0.12))
+        .cornerRadius(4)
     }
 
     private var passengersSection: some View {

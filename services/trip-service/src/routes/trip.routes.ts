@@ -188,6 +188,21 @@ router.put(
 );
 
 /**
+ * @route   PUT /trips/:id/state/debug
+ * @desc    Dev-only: force-update trip state without ownership or confirmation checks
+ * @access  Private (non-production only)
+ */
+if (process.env.NODE_ENV !== 'production') {
+  router.put(
+    '/:id/state/debug',
+    authenticateToken,
+    [body('status').notEmpty().withMessage('Status is required').trim()],
+    validateRequest,
+    asyncHandler(tripController.updateTripStateDebug)
+  );
+}
+
+/**
  * @route   DELETE /trips/:id
  * @desc    Cancel trip (set status to cancelled)
  * @access  Private (Own trip only)

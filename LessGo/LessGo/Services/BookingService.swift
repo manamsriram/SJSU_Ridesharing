@@ -123,6 +123,18 @@ class BookingService {
         return booking
     }
 
+    // MARK: - Confirm Pickup (Rider Only)
+
+    func confirmPickup(bookingId: String) async throws {
+        struct ConfirmPickupResponse: Codable {
+            let status: String
+        }
+        let _: ConfirmPickupResponse = try await network.request(
+            endpoint: "/bookings/\(bookingId)/confirm-pickup",
+            method: .post
+        )
+    }
+
     // MARK: - Delete Booking
 
     func deleteBooking(bookingId: String) async throws {

@@ -763,6 +763,7 @@ export const getBookingsByTripId = async (tripId: string): Promise<{ bookings: a
       b.payment_intent_id,
       b.payment_deadline_at,
       b.cancellation_reason,
+      b.rider_pickup_confirmed_at,
       COALESCE(q.final_price, q.max_price) AS fare
     FROM bookings b
     JOIN users u ON b.rider_id = u.user_id
@@ -777,6 +778,7 @@ export const getBookingsByTripId = async (tripId: string): Promise<{ bookings: a
   const bookings = result.rows.map((row) => ({
     ...row,
     fare: row.fare !== null && row.fare !== undefined ? parseFloat(row.fare) : undefined,
+    rider_pickup_confirmed_at: row.rider_pickup_confirmed_at || null,
   }));
 
   const totalFare = bookings
@@ -1222,6 +1224,47 @@ export const writeFinalPrice = async (bookingId: string, finalPrice: number): Pr
   );
 };
 
+/**
+ * Confirm that a rider is in the car (rider only)
+ * Idempotent: repeated calls preserve the original timestamp
+ * @param bookingId Booking's UUID
+ * @param riderId Rider's UUID (for authorization)
+ * @returns Updated booking row
+ */
+export const confirmRiderPickup = async (
+  bookingId: string,
+  riderId: string
+): Promise<object> => {
+  // Fetch booking to validate ownership and state
+  const check = await pool.query(
+    `SELECT booking_id, rider_id, booking_state, rider_pickup_confirmed_at
+     FROM bookings
+     WHERE booking_id = $1 AND deleted_at IS NULL`,
+    [bookingId]
+  );
+  if (check.rowCount === 0) {
+    throw new AppError('Booking not found', 404);
+  }
+  const row = check.rows[0];
+  if (row.rider_id !== riderId) {
+    throw new AppError('Unauthorized', 403);
+  }
+  if (row.booking_state !== 'approved') {
+    throw new AppError('Booking is not in an approved state', 409);
+  }
+
+  // Idempotent: COALESCE preserves existing timestamp on repeated calls
+  const result = await pool.query(
+    `UPDATE bookings
+     SET rider_pickup_confirmed_at = COALESCE(rider_pickup_confirmed_at, NOW()),
+         updated_at = current_timestamp
+     WHERE booking_id = $1
+     RETURNING booking_id, trip_id, rider_id, booking_state, rider_pickup_confirmed_at, updated_at`,
+    [bookingId]
+  );
+  return result.rows[0];
+};
+
 export default {
   createBooking,
   getBookingById,
@@ -1238,4 +1281,5 @@ export default {
   confirmPayment,
   capturePayment,
   writeFinalPrice,
+  confirmRiderPickup,
 };
