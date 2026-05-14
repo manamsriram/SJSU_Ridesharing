@@ -374,7 +374,7 @@ export const getDriverEarnings = async (userId: string) => {
     JOIN trips t ON b.trip_id = t.trip_id
     WHERE t.driver_id = $1
       AND p.status = 'captured'
-      AND DATE_TRUNC('month', p.updated_at) = DATE_TRUNC('month', CURRENT_DATE)
+      AND DATE_TRUNC('month', t.updated_at) = DATE_TRUNC('month', CURRENT_DATE)
   `;
   const thisMonthResult = await pool.query(thisMonthQuery, [userId]);
 
@@ -386,7 +386,7 @@ export const getDriverEarnings = async (userId: string) => {
     JOIN trips t ON b.trip_id = t.trip_id
     WHERE t.driver_id = $1
       AND p.status = 'captured'
-      AND DATE(p.updated_at) = CURRENT_DATE
+      AND DATE(t.updated_at) = CURRENT_DATE
   `;
   const todayResult = await pool.query(todayQuery, [userId]);
 
@@ -399,14 +399,13 @@ export const getDriverEarnings = async (userId: string) => {
       CURRENT_DATE,
       INTERVAL '1 day'
     ) AS d(day)
-    LEFT JOIN payments p
-      ON DATE(p.updated_at) = d.day
-      AND p.status = 'captured'
-      AND p.booking_id IN (
-        SELECT b.booking_id FROM bookings b
-        JOIN trips t ON b.trip_id = t.trip_id
-        WHERE t.driver_id = $1
-      )
+    LEFT JOIN (
+      SELECT p.amount, DATE(t.updated_at) AS trip_date
+      FROM payments p
+      JOIN bookings b ON p.booking_id = b.booking_id
+      JOIN trips t ON b.trip_id = t.trip_id
+      WHERE t.driver_id = $1 AND p.status = 'captured'
+    ) p ON p.trip_date = d.day
     GROUP BY d.day
     ORDER BY d.day ASC
   `;
