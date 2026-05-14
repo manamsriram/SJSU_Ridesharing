@@ -584,8 +584,14 @@ export const cancelBooking = async (
         await stripe.paymentIntents.cancel(paymentIntentId);
         console.log(`[CANCEL] Released Stripe hold for PaymentIntent ${paymentIntentId}`);
       } catch (stripeErr: any) {
-        // Log but don't block cancellation if Stripe cancel fails (e.g. already cancelled)
-        console.warn(`[CANCEL] Stripe cancel failed for ${paymentIntentId}:`, stripeErr.message);
+        // Only swallow error if intent is already cancelled or succeeded
+        const safeStatuses = ['canceled', 'succeeded'];
+        if (stripeErr.payment_intent && safeStatuses.includes(stripeErr.payment_intent.status)) {
+          console.warn(`[CANCEL] Stripe intent ${paymentIntentId} already ${stripeErr.payment_intent.status}`);
+        } else {
+          console.error(`[CANCEL] Failed to release Stripe hold for ${paymentIntentId}:`, stripeErr.message);
+          throw new AppError('Failed to release payment hold. Please contact support.', 500);
+        }
       }
     }
 
