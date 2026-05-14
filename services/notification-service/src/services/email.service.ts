@@ -158,6 +158,24 @@ export async function sendDriverNewBooking(
   await transporter.sendMail({ from: FROM, to, subject: '🎉 New Passenger on Your LessGo Trip!', html });
 }
 
+export async function sendAdminAlert(data: { subject: string; message: string }): Promise<void> {
+  const adminEmail = getSecretValue('ADMIN_EMAIL');
+  if (!adminEmail) {
+    console.warn(`[ADMIN ALERT] ADMIN_EMAIL not set. Alert: ${data.subject}\n${data.message}`);
+    return;
+  }
+  if (!isEmailConfigured()) {
+    console.warn(`[ADMIN ALERT] SMTP not configured. Alert: ${data.subject}\n${data.message}`);
+    return;
+  }
+  const html = baseTemplate(`
+    <h2>⚠️ Admin Alert</h2>
+    <p><strong>${data.subject}</strong></p>
+    <pre style="background:#F2F2F7;padding:12px;border-radius:8px;font-size:13px;white-space:pre-wrap">${data.message}</pre>
+  `);
+  await transporter.sendMail({ from: FROM, to: adminEmail, subject: data.subject, html });
+}
+
 export async function sendCancellationNotice(
   to: string,
   data: { name: string; origin: string; destination: string; departureTime: string; refundAmount?: number; bookingId: string }

@@ -1,5 +1,6 @@
 import app from './app';
 import { config } from './config';
+import { startSettlementRetryJob } from './services/settlement.retry';
 
 const PORT = config.port;
 
@@ -19,6 +20,7 @@ const server = app.listen(PORT, () => {
   Google Maps API: ${config.googleMapsApiKey ? 'Configured' : 'Not Configured'}
   ========================================
   `);
+  startSettlementRetryJob();
 });
 
 /**

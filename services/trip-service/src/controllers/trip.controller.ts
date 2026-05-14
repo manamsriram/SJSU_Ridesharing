@@ -1,8 +1,11 @@
 import { Response } from 'express';
 import axios from 'axios';
+import { Pool } from 'pg';
 import * as tripService from '../services/trip.service';
 import { AuthRequest, AppError, successResponse, errorResponse, CreateTripRequest, SearchTripsRequest, TripStatus } from '@lessgo/shared';
 import { config } from '../config';
+
+const pool = new Pool({ connectionString: config.databaseUrl });
 
 /**
  * Create a new trip
@@ -525,8 +528,24 @@ export const updateTripState = async (req: AuthRequest, res: Response): Promise<
             console.error(`[CAPTURE] Failed for booking ${bookingId}:`, capErr);
           }
         }
-      } catch (settleErr) {
-        console.error('Failed to calculate trip settlement (non-critical):', settleErr);
+      } catch (settleErr: any) {
+        console.error('Failed to calculate trip settlement:', settleErr);
+        // Queue for retry
+        await pool.query(
+          `INSERT INTO pending_settlements (trip_id, attempts, last_error, last_attempted_at)
+           VALUES ($1, 1, $2, now())
+           ON CONFLICT (trip_id) WHERE resolved_at IS NULL
+           DO UPDATE SET attempts = pending_settlements.attempts + 1,
+                         last_error = $2,
+                         last_attempted_at = now()`,
+          [id, settleErr?.message ?? String(settleErr)]
+        ).catch((dbErr: any) => console.error('[SETTLE_QUEUE] Failed to queue retry:', dbErr));
+
+        // Admin alert (fire-and-forget)
+        axios.post(`${config.notificationServiceUrl}/notifications/admin-alert`, {
+          subject: `⚠️ Settlement failed for trip ${id}`,
+          message: `Trip ${id} completed but settlement failed.\nError: ${settleErr?.message ?? settleErr}\nQueued for automatic retry.`,
+        }).catch(() => {});
       }
     }
 
@@ -874,6 +893,56 @@ function extractBookingsArray(payload: any): any[] {
 export const processDeadlineCancellations = async (_req: AuthRequest, res: Response): Promise<void> => {
   const result = await tripService.processDeadlineCancellations();
   res.json({ status: 'success', message: `Processed ${result.processed} deadline cancellation(s)`, data: result });
+};
+
+/**
+ * POST /trips/:id/settle
+ * Admin: manually re-trigger settlement for a completed trip.
+ */
+export const retrySettlement = async (req: AuthRequest, res: Response): Promise<void> => {
+  const { id } = req.params;
+
+  const settlementRes = await axios.get(`${config.costServiceUrl}/cost/settle/${id}`);
+  const settlement = settlementRes.data.data;
+
+  const bookingsRes = await axios.get(`${config.bookingServiceUrl}/bookings/trip/${id}/settle`);
+  const raw = bookingsRes.data?.data ?? bookingsRes.data;
+  const bookings: any[] = Array.isArray(raw) ? raw : Array.isArray(raw?.bookings) ? raw.bookings : [];
+
+  if (Array.isArray(settlement?.riders)) {
+    await Promise.all(
+      (settlement.riders as any[]).map(async (rider: any) => {
+        const booking = bookings.find((b: any) => b.rider_id === rider.rider_id);
+        if (!booking) return;
+        const bookingId = booking.booking_id ?? booking.id;
+        await axios.patch(
+          `${config.bookingServiceUrl}/bookings/${bookingId}/final-price`,
+          { final_price: rider.amount_paid },
+          { headers: { 'x-internal-service': 'trip-service' } }
+        ).catch((e: any) => console.error(`[SETTLE] final-price failed for ${bookingId}:`, e.message));
+      })
+    );
+  }
+
+  const toCapture = bookings.filter(
+    (b: any) => b.payment_intent_id && ['approved', 'completed'].includes(b.booking_state)
+  );
+  for (const booking of toCapture) {
+    const bookingId = booking.booking_id ?? booking.id;
+    await axios.post(
+      `${config.bookingServiceUrl}/bookings/${bookingId}/capture-payment`,
+      {},
+      { headers: { 'x-internal-service': 'trip-service' } }
+    ).catch((e: any) => console.error(`[SETTLE] capture failed for ${bookingId}:`, e.message));
+  }
+
+  // Mark resolved in pending_settlements if present
+  await pool.query(
+    `UPDATE pending_settlements SET resolved_at = now() WHERE trip_id = $1 AND resolved_at IS NULL`,
+    [id]
+  ).catch(() => {});
+
+  res.json({ status: 'success', message: `Settlement completed for trip ${id}`, data: { settlement, captured: toCapture.length } });
 };
 
 async function riderHasBookingForTrip(authHeader: string | undefined, tripId: string, userId: string): Promise<boolean> {

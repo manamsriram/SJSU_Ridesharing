@@ -125,6 +125,22 @@ router.post(
   asyncHandler(tripController.processDeadlineCancellations)
 );
 
+/**
+ * @route   POST /trips/:id/settle
+ * @desc    Admin: manually re-trigger settlement for a completed trip
+ * @access  Internal (x-internal-service header required)
+ */
+router.post(
+  '/:id/settle',
+  (req: any, res: any, next: any) => {
+    if (!req.headers['x-internal-service']) {
+      return res.status(403).json({ status: 'error', message: 'Forbidden' });
+    }
+    return next();
+  },
+  asyncHandler(tripController.retrySettlement)
+);
+
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**

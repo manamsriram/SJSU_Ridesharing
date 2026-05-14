@@ -359,6 +359,26 @@ app.post('/notifications/send/payment-deadline-cancelled', async (req, res) => {
 // ─── Support endpoints ────────────────────────────────────────────────────────
 
 /**
+ * POST /notifications/admin-alert
+ * Body: { subject, message }
+ * Sends an email to ADMIN_EMAIL. Internal use only.
+ */
+app.post('/notifications/admin-alert', async (req, res) => {
+  const { subject, message } = req.body;
+  if (!subject || !message) {
+    res.status(400).json({ status: 'error', message: 'subject and message are required' });
+    return;
+  }
+  console.error(`[ADMIN ALERT] ${subject}\n${message}`);
+  try {
+    await emailService.sendAdminAlert({ subject, message });
+  } catch (err) {
+    console.error('[ADMIN ALERT] Failed to send email:', err);
+  }
+  res.json({ status: 'success', message: 'Admin alert sent' });
+});
+
+/**
  * POST /support/report-issue
  * Body: { userId?, email?, issueType, description }
  */
