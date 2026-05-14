@@ -579,11 +579,6 @@ struct ActiveTripView: View {
                     tripProgressTimeline
                     Divider()
                     actionButtons
-                    #if DEBUG
-                    if !isDriver {
-                        riderDebugPanel
-                    }
-                    #endif
                     debugTestingControls
                 }
                 .padding(.horizontal, 18)
@@ -725,31 +720,15 @@ struct ActiveTripView: View {
                     Task { await updateState(to: .arrived) }
                 }
             case .arrived:
-                let currentStopCoord: CLLocationCoordinate2D? = {
-                    let pairs = orderedPassengersWithPickups
-                    guard currentPickupIndex < pairs.count else { return nil }
-                    return pairs[currentPickupIndex].coordinate
-                }()
-                let ridersAtStop: [(passenger: BookingWithRider, coordinate: CLLocationCoordinate2D)] = {
-                    guard let stopCoord = currentStopCoord else { return [] }
-                    return orderedPassengersWithPickups.filter { pair in
-                        let dx = pair.coordinate.latitude - stopCoord.latitude
-                        let dy = pair.coordinate.longitude - stopCoord.longitude
-                        let distMeters = sqrt(dx * dx + dy * dy) * 111_000
-                        return distMeters <= 50
-                    }
-                }()
-                let allConfirmed = ridersAtStop.isEmpty || ridersAtStop.allSatisfy { $0.passenger.hasConfirmedPickup }
-
                 VStack(spacing: 10) {
-                    if !ridersAtStop.isEmpty && !allConfirmed {
-                        let confirmed = ridersAtStop.filter { $0.passenger.hasConfirmedPickup }.count
-                        let total = ridersAtStop.count
+                    if !ridersAtCurrentStop.isEmpty && !allRidersAtStopConfirmed {
+                        let confirmed = ridersAtCurrentStop.filter { $0.passenger.hasConfirmedPickup }.count
+                        let total = ridersAtCurrentStop.count
                         VStack(alignment: .leading, spacing: 6) {
                             Text("Waiting for riders to confirm (\(confirmed)/\(total))")
                                 .font(.system(size: 13, weight: .semibold))
                                 .foregroundColor(.textSecondary)
-                            ForEach(ridersAtStop, id: \.passenger.id) { pair in
+                            ForEach(ridersAtCurrentStop, id: \.passenger.id) { pair in
                                 HStack(spacing: 8) {
                                     Image(systemName: pair.passenger.hasConfirmedPickup ? "checkmark.circle.fill" : "clock")
                                         .foregroundColor(pair.passenger.hasConfirmedPickup ? .brandGreen : .brandGold)
@@ -770,7 +749,7 @@ struct ActiveTripView: View {
                     PrimaryButton(
                         title: "Rider Picked Up - Start Ride",
                         icon: "arrow.triangle.turn.up.right.circle.fill",
-                        isEnabled: allConfirmed && !isUpdatingState
+                        isEnabled: allRidersAtStopConfirmed && !isUpdatingState
                     ) {
                         Task {
                             await updateState(to: .inProgress)
@@ -982,59 +961,15 @@ struct ActiveTripView: View {
     }
 
     #if DEBUG
-    private var riderDebugPanel: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Rider Debug Panel")
-                .font(.system(size: 12, weight: .bold))
-                .foregroundColor(.textSecondary)
-            let stopCount = orderedPassengersWithPickups.count
-            Text("Stop \(currentPickupIndex + 1) of \(max(stopCount, 1))")
-                .font(.system(size: 11))
-                .foregroundColor(.textSecondary)
-            HStack(spacing: 8) {
-                Button("→ En Route") { Task { await simulateRiderStateDebug("en_route") } }
-                    .debugPill()
-                Button("→ Arrived") { Task { await simulateRiderStateDebug("arrived") } }
-                    .debugPill()
-            }
-            HStack(spacing: 8) {
-                Button("Confirm Pickup") {
-                    Task {
-                        if let bookingId = booking?.id {
-                            try? await BookingService.shared.confirmPickup(bookingId: bookingId)
-                        }
-                    }
-                }
-                .debugPill()
-                Button("→ In Progress") { Task { await simulateRiderStateDebug("in_progress") } }
-                    .debugPill()
-            }
-            Button("→ Completed") { Task { await simulateRiderStateDebug("completed") } }
-                .debugPill()
-        }
-        .padding(12)
-        .background(Color.black.opacity(0.06))
-        .cornerRadius(10)
-    }
-
     private func simulateRiderStateDebug(_ status: String) async {
-        guard let url = URL(string: APIConfig.baseURL + "/trips/\(trip.id)/state/debug") else { return }
-        var req = URLRequest(url: url)
-        req.httpMethod = "PUT"
-        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        if let token = KeychainManager.shared.getAccessToken() {
-            req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        }
-        req.httpBody = try? JSONEncoder().encode(["status": status])
-        _ = try? await URLSession.shared.data(for: req)
-        // Refresh trip state
+        guard let tripStatus = TripStatus(rawValue: status) else { return }
         do {
-            let response = try await tripService.getTrip(id: trip.id)
+            let response = try await tripService.updateTripStateDebug(tripId: trip.id, status: tripStatus)
             await MainActor.run {
-                withAnimation { tripStatus = response.status }
+                withAnimation { self.tripStatus = response.status }
             }
         } catch {
-            print("Rider debug state refresh error: \(error)")
+            print("Rider debug state error: \(error)")
         }
     }
     #endif
@@ -1087,6 +1022,25 @@ struct ActiveTripView: View {
                 }
                 .debugPill(disabled: isSimulatingRiderMovement)
                 .disabled(isSimulatingRiderMovement)
+
+                #if DEBUG
+                Divider().padding(.vertical, 2)
+                HStack(spacing: 8) {
+                    Button("→ En Route") { Task { await simulateRiderStateDebug("en_route") } }.debugPill()
+                    Button("→ Arrived") { Task { await simulateRiderStateDebug("arrived") } }.debugPill()
+                }
+                HStack(spacing: 8) {
+                    Button("Confirm Pickup") {
+                        Task {
+                            if let id = booking?.id {
+                                try? await BookingService.shared.confirmPickup(bookingId: id)
+                            }
+                        }
+                    }.debugPill()
+                    Button("→ In Progress") { Task { await simulateRiderStateDebug("in_progress") } }.debugPill()
+                }
+                Button("→ Completed") { Task { await simulateRiderStateDebug("completed") } }.debugPill()
+                #endif
             }
 
             Button("Reset Test State") {
@@ -1579,6 +1533,24 @@ struct ActiveTripView: View {
 
     private var orderedPickupCoordinates: [CLLocationCoordinate2D] {
         orderedPassengersWithPickups.map { $0.coordinate }
+    }
+
+    private var arrivedStopCoord: CLLocationCoordinate2D? {
+        guard currentPickupIndex < orderedPassengersWithPickups.count else { return nil }
+        return orderedPassengersWithPickups[currentPickupIndex].coordinate
+    }
+
+    private var ridersAtCurrentStop: [(passenger: BookingWithRider, coordinate: CLLocationCoordinate2D)] {
+        guard let stopCoord = arrivedStopCoord else { return [] }
+        return orderedPassengersWithPickups.filter { pair in
+            let dx = pair.coordinate.latitude - stopCoord.latitude
+            let dy = pair.coordinate.longitude - stopCoord.longitude
+            return sqrt(dx * dx + dy * dy) * 111_000 <= 50
+        }
+    }
+
+    private var allRidersAtStopConfirmed: Bool {
+        ridersAtCurrentStop.isEmpty || ridersAtCurrentStop.allSatisfy { $0.passenger.hasConfirmedPickup }
     }
 
     private var otherPartyName: String {

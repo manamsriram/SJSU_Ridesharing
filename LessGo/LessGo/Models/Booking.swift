@@ -107,7 +107,8 @@ struct Booking: Codable, Identifiable {
             trip: trip, rider: rider, pickupLocation: pickupLocation,
             quote: quote, payment: payment, fare: fare,
             paymentIntentId: paymentIntentId, paymentDeadlineAt: paymentDeadlineAt,
-            cancellationReason: cancellationReason
+            cancellationReason: cancellationReason,
+            riderPickupConfirmedAt: riderPickupConfirmedAt
         )
     }
 
@@ -128,7 +129,8 @@ struct Booking: Codable, Identifiable {
             fare: updated.fare ?? fare,
             paymentIntentId: updated.paymentIntentId ?? paymentIntentId,
             paymentDeadlineAt: updated.paymentDeadlineAt ?? paymentDeadlineAt,
-            cancellationReason: updated.cancellationReason ?? cancellationReason
+            cancellationReason: updated.cancellationReason ?? cancellationReason,
+            riderPickupConfirmedAt: updated.riderPickupConfirmedAt ?? riderPickupConfirmedAt
         )
     }
 

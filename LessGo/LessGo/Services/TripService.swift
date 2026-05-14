@@ -349,4 +349,16 @@ class TripService {
         )
         return response
     }
+
+    #if DEBUG
+    func updateTripStateDebug(tripId: String, status: TripStatus) async throws -> TripStateUpdateResponse {
+        struct StateUpdate: Encodable { let status: String }
+        return try await network.request(
+            endpoint: "/trips/\(tripId)/state/debug",
+            method: .put,
+            body: StateUpdate(status: status.rawValue),
+            requiresAuth: true
+        )
+    }
+    #endif
 }
