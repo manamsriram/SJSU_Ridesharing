@@ -93,6 +93,7 @@ struct DriverHomeView: View {
                         .padding(.horizontal, AppConstants.pagePadding)
 
                     upcomingRidesSection
+                        .padding(.horizontal, AppConstants.pagePadding)
 
                     Spacer().frame(height: 160)
                 }
@@ -386,6 +387,7 @@ struct DriverHomeView: View {
                 .padding(.bottom, 4)
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color.cardBackground)
         .cornerRadius(DesignSystem.CornerRadius.card)
         .shadow(color: .black.opacity(0.08), radius: 10, x: 0, y: 4)
