@@ -323,6 +323,9 @@ class NetworkManager {
         case 408:
             return .timeout
         case 429:
+            if let apiError = try? decoder.decode(APIError.self, from: data) {
+                return .serverError(apiError)
+            }
             return .tooManyRequests
         default:
             if let apiError = try? decoder.decode(APIError.self, from: data) {
