@@ -5,18 +5,18 @@ const nodemailerMocks = vi.hoisted(() => ({
   sendMail: vi.fn(),
 }));
 
-vi.mock('nodemailer', () => ({
-  default: {
-    createTransport: nodemailerMocks.createTransport,
-  },
-}));
-
 async function importEmailService() {
   vi.resetModules();
   nodemailerMocks.sendMail.mockReset();
   nodemailerMocks.createTransport.mockReset().mockReturnValue({
     sendMail: nodemailerMocks.sendMail,
   });
+
+  vi.doMock('nodemailer', () => ({
+    default: {
+      createTransport: nodemailerMocks.createTransport,
+    },
+  }));
 
   return import('../../services/notification-service/src/services/email.service');
 }
