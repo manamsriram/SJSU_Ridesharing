@@ -670,6 +670,7 @@ struct BookingListView: View {
                 }
             }
         }
+        .background(Color.appBackground.ignoresSafeArea())
     }
 
     private func refreshCurrentTab() async {

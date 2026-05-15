@@ -222,6 +222,7 @@ struct DriverHomeView: View {
                 CreateTripView()
             }
         }
+        .background(Color.appBackground.ignoresSafeArea())
     }
 
     // MARK: - Active Ride Banner
