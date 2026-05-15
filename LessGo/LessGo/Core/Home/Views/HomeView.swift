@@ -33,9 +33,11 @@ struct HomeView: View {
                         RiderHomeView()
                     }
                 }
+                .background(Color.appBackground.ignoresSafeArea())
                 .tag(Tab.home)
 
                 BookingListView()
+                    .background(Color.appBackground.ignoresSafeArea())
                     .tag(Tab.bookings)
 
                 ProfileView()
