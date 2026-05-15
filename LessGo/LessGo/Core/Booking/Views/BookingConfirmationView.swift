@@ -595,6 +595,7 @@ struct BookingListView: View {
                     .refreshable { await refreshCurrentTab() }
                 }
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(
                 ZStack {
                     Color.appBackground.ignoresSafeArea()
