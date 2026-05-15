@@ -20,6 +20,10 @@ export const createUser = async (
 ): Promise<SafeUser> => {
   const { name, email, password, role } = userData;
 
+  if (!email.toLowerCase().endsWith('@sjsu.edu')) {
+    throw new Error('Only @sjsu.edu email addresses are allowed');
+  }
+
   // Check if user with this email already exists
   const existingUser = await findUserByEmail(email);
   if (existingUser) {
@@ -111,6 +115,10 @@ export const validateCredentials = async (
 
   if (!isPasswordValid) {
     return null;
+  }
+
+  if (user.sjsu_id_status === SJSUIdStatus.Pending) {
+    throw new Error('EMAIL_NOT_VERIFIED');
   }
 
   // Return user without password

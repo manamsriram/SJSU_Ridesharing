@@ -116,6 +116,20 @@ router.post(
 router.put('/change-password', asyncHandler(authController.changePassword));
 
 /**
+ * @route   POST /auth/verify-email
+ * @desc    Verify SJSU email with OTP code; returns tokens on success
+ * @access  Public
+ */
+router.post('/verify-email', asyncHandler(authController.verifyEmail));
+
+/**
+ * @route   POST /auth/resend-otp
+ * @desc    Resend OTP to user's SJSU email (60s cooldown)
+ * @access  Public
+ */
+router.post('/resend-otp', asyncHandler(authController.resendOtp));
+
+/**
  * @route   POST /auth/test/verify/:userId
  * @desc    Test-only: verify a user's SJSU ID status
  * @access  Development only

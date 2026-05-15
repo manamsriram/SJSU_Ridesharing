@@ -34,6 +34,13 @@ export const config = {
   // AWS S3 (optional)
   awsS3Bucket: getSecretValue('AWS_S3_BUCKET'),
   awsRegion: getSecretValue('AWS_REGION'),
+
+  // SMTP (for OTP emails)
+  smtpHost: getSecretValue('SMTP_HOST') ?? 'smtp.gmail.com',
+  smtpPort: parseInt(getSecretValue('SMTP_PORT') ?? '587'),
+  smtpUser: getSecretValue('SMTP_USER'),
+  smtpPass: getSecretValue('SMTP_PASS'),
+  fromEmail: getSecretValue('FROM_EMAIL') ?? 'LessGo <noreply@lessgo.app>',
 };
 
 // Validate required config

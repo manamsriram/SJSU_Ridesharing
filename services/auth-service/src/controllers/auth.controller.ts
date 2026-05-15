@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import * as authService from '../services/auth.service';
 import * as jwtService from '../services/jwt.service';
+import * as otpService from '../services/otp.service';
 import { RegisterRequest, LoginRequest, AuthResponse, AppError, successResponse, errorResponse, SJSUIdStatus } from '@lessgo/shared';
 
 /**
@@ -10,39 +11,24 @@ import { RegisterRequest, LoginRequest, AuthResponse, AppError, successResponse,
 export const register = async (req: Request, res: Response): Promise<void> => {
   try {
     const userData: RegisterRequest = req.body;
-    const sjsuIdImage = req.file; // Multer file upload
-
-    // Create user (service layer checks for duplicates)
-    const sjsuIdImagePath = sjsuIdImage ? sjsuIdImage.path : undefined;
+    const sjsuIdImagePath = req.file ? req.file.path : undefined;
     const user = await authService.createUser(userData, sjsuIdImagePath);
 
-    // Generate tokens
-    const { accessToken, refreshToken } = jwtService.generateTokenPair(
-      user.user_id,
-      user.email,
-      user.role,
-      user.sjsu_id_status
-    );
+    // Send OTP — do not issue tokens until email is verified
+    await otpService.generateAndSendOtp(user.user_id, user.email);
 
-    const response: AuthResponse = {
-      user,
-      accessToken,
-      refreshToken,
-    };
-
-    successResponse(res, response, 'User registered successfully', 201);
+    successResponse(res, { user_id: user.user_id }, 'Verification code sent to your SJSU email', 201);
   } catch (error) {
     console.error('Registration error:', error);
-
-    // Handle duplicate email error
     if (error instanceof Error && error.message === 'An account with this email already exists') {
       errorResponse(res, 'An account with this email already exists', 400);
       return;
     }
-
-    if (error instanceof AppError) {
-      throw error;
+    if (error instanceof Error && error.message === 'Only @sjsu.edu email addresses are allowed') {
+      errorResponse(res, 'Only @sjsu.edu email addresses are allowed', 400);
+      return;
     }
+    if (error instanceof AppError) throw error;
     throw new AppError('Registration failed', 500);
   }
 };
@@ -80,6 +66,10 @@ export const login = async (req: Request, res: Response): Promise<void> => {
     successResponse(res, response, 'Login successful');
   } catch (error) {
     console.error('Login error:', error);
+    if (error instanceof Error && error.message === 'EMAIL_NOT_VERIFIED') {
+      errorResponse(res, 'Please verify your SJSU email before logging in', 403);
+      return;
+    }
     if (error instanceof AppError) {
       throw error;
     }
@@ -324,4 +314,76 @@ export const testVerifyUser = async (req: Request, res: Response): Promise<void>
 
   const updatedUser = await authService.updateSJSUIdStatus(userId, SJSUIdStatus.Verified);
   successResponse(res, updatedUser, 'User SJSU ID verified (test only)');
+};
+
+/**
+ * Verify SJSU email with OTP
+ * POST /auth/verify-email
+ */
+export const verifyEmail = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { email, otp } = req.body;
+    if (!email || !otp) {
+      errorResponse(res, 'email and otp are required', 400);
+      return;
+    }
+
+    const user = await otpService.verifyOtp(email, otp);
+
+    const { accessToken, refreshToken } = jwtService.generateTokenPair(
+      user.user_id,
+      user.email,
+      user.role,
+      user.sjsu_id_status
+    );
+
+    const response: AuthResponse = { user, accessToken, refreshToken };
+    successResponse(res, response, 'Email verified successfully');
+  } catch (error) {
+    if (error instanceof Error && error.message === 'OTP_EXPIRED') {
+      errorResponse(res, 'Verification code has expired. Please request a new one.', 403);
+      return;
+    }
+    if (error instanceof Error && error.message === 'OTP_INVALID') {
+      errorResponse(res, 'Invalid verification code', 403);
+      return;
+    }
+    throw new AppError('Email verification failed', 500);
+  }
+};
+
+/**
+ * Resend OTP to user's SJSU email
+ * POST /auth/resend-otp
+ */
+export const resendOtp = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { email } = req.body;
+    if (!email) {
+      errorResponse(res, 'email is required', 400);
+      return;
+    }
+
+    const user = await authService.findUserByEmail(email);
+    if (!user) {
+      // Don't reveal whether the email exists
+      successResponse(res, null, 'If that email is registered, a new code has been sent');
+      return;
+    }
+
+    if (user.sjsu_id_status === SJSUIdStatus.Verified) {
+      errorResponse(res, 'This account is already verified', 400);
+      return;
+    }
+
+    await otpService.generateAndSendOtp(user.user_id, user.email);
+    successResponse(res, null, 'Verification code resent');
+  } catch (error) {
+    if (error instanceof Error && error.message === 'RESEND_TOO_SOON') {
+      const secondsRemaining = (error as any).secondsRemaining ?? 60;
+      errorResponse(res, `Please wait ${secondsRemaining}s before requesting another code`, 429);
+      return;
+    }
+    throw new AppError('Failed to resend verification code', 500);
+  }
 };
