@@ -381,9 +381,6 @@ struct ActiveTripView: View {
         VStack(spacing: 10) {
             summaryRow("Date", trip.departureTime.tripDateString)
             summaryRow("Time", trip.departureTime.tripTimeString)
-            if !isDriver || paidPassengers.count <= 1 {
-                summaryRow(isDriver ? "Rider" : "Driver", otherPartyName)
-            }
             summaryRow("Trip Status", tripStatus.displayName)
             if isDriver {
                 summaryRow("Riders", "\(settlement?.riderCount ?? paidPassengers.count)")
