@@ -3,17 +3,19 @@ import { getSecretValue } from '@lessgo/shared';
 
 // MARK: - Transporter
 
-const transporter = nodemailer.createTransport({
-  host: getSecretValue('SMTP_HOST', 'smtp.gmail.com'),
-  port: parseInt(getSecretValue('SMTP_PORT', '587') || '587'),
-  secure: false,
-  auth: {
-    user: getSecretValue('SMTP_USER'),
-    pass: getSecretValue('SMTP_PASS'),
-  },
-});
+function getTransporter() {
+  return nodemailer.createTransport({
+    host: getSecretValue('SMTP_HOST', 'smtp.gmail.com'),
+    port: parseInt(getSecretValue('SMTP_PORT', '587') || '587'),
+    secure: false,
+    auth: {
+      user: getSecretValue('SMTP_USER'),
+      pass: getSecretValue('SMTP_PASS'),
+    },
+  });
+}
 
-const FROM = getSecretValue('FROM_EMAIL', 'LessGo <noreply@lessgo.app>');
+const FROM = () => getSecretValue('FROM_EMAIL', 'LessGo <noreply@lessgo.app>');
 
 function isEmailConfigured(): boolean {
   return !!(getSecretValue('SMTP_USER') && getSecretValue('SMTP_PASS'));
@@ -86,7 +88,7 @@ export async function sendBookingConfirmation(
     <p style="text-align:center;color:#8E8E93;font-size:13px;">Total charged to your payment method</p>
   `);
 
-  await transporter.sendMail({ from: FROM, to, subject: '✅ Your LessGo Ride is Confirmed!', html });
+  await getTransporter().sendMail({ from: FROM(), to, subject: '✅ Your LessGo Ride is Confirmed!', html });
 }
 
 export async function sendPaymentReceipt(
@@ -109,7 +111,7 @@ export async function sendPaymentReceipt(
     <p style="text-align:center;color:#8E8E93;font-size:13px;">This is your official receipt. Keep it for your records.</p>
   `);
 
-  await transporter.sendMail({ from: FROM, to, subject: '💳 LessGo Payment Receipt', html });
+  await getTransporter().sendMail({ from: FROM(), to, subject: '💳 LessGo Payment Receipt', html });
 }
 
 export async function sendTripReminder(
@@ -132,7 +134,7 @@ export async function sendTripReminder(
     <p>Please be at the pickup location 5 minutes early. Open LessGo to see your driver's location.</p>
   `);
 
-  await transporter.sendMail({ from: FROM, to, subject: '⏰ Your LessGo Ride Starts in 1 Hour', html });
+  await getTransporter().sendMail({ from: FROM(), to, subject: '⏰ Your LessGo Ride Starts in 1 Hour', html });
 }
 
 export async function sendDriverNewBooking(
@@ -155,7 +157,7 @@ export async function sendDriverNewBooking(
     <p>Open LessGo to see full passenger details.</p>
   `);
 
-  await transporter.sendMail({ from: FROM, to, subject: '🎉 New Passenger on Your LessGo Trip!', html });
+  await getTransporter().sendMail({ from: FROM(), to, subject: '🎉 New Passenger on Your LessGo Trip!', html });
 }
 
 export async function sendAdminAlert(data: { subject: string; message: string }): Promise<void> {
@@ -173,7 +175,7 @@ export async function sendAdminAlert(data: { subject: string; message: string })
     <p><strong>${data.subject}</strong></p>
     <pre style="background:#F2F2F7;padding:12px;border-radius:8px;font-size:13px;white-space:pre-wrap">${data.message}</pre>
   `);
-  await transporter.sendMail({ from: FROM, to: adminEmail, subject: data.subject, html });
+  await getTransporter().sendMail({ from: FROM(), to: adminEmail, subject: data.subject, html });
 }
 
 export async function sendCancellationNotice(
@@ -199,5 +201,5 @@ export async function sendCancellationNotice(
     <p>Browse LessGo for other available trips at your time.</p>
   `);
 
-  await transporter.sendMail({ from: FROM, to, subject: '❌ LessGo Booking Cancelled', html });
+  await getTransporter().sendMail({ from: FROM(), to, subject: '❌ LessGo Booking Cancelled', html });
 }
