@@ -43,6 +43,10 @@ struct HomeView: View {
                 ProfileView()
                     .tag(Tab.profile)
             }
+            // Keyed by user ID so switching accounts triggers a full clean
+            // rebuild of the TabView rather than a live in-place patch, which
+            // would leave a black frame while DriverHomeView ↔ RiderHomeView swap.
+            .id(authVM.currentUser?.id ?? "logged-out")
             // hide the default tab bar so we can use our custom one
             .tabViewStyle(.page(indexDisplayMode: .never))
             .ignoresSafeArea()
