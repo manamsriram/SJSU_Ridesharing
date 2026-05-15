@@ -244,8 +244,8 @@ struct MatchedRideView: View {
                 .padding(.top, 14)
                 .padding(.bottom, 18)
 
-            // Row 1 — Pickup instruction
-            pickupInstructionRow
+            // Row 1 — Phase-aware status
+            statusRow
                 .padding(.horizontal, 20)
                 .padding(.bottom, 16)
 
@@ -267,17 +267,18 @@ struct MatchedRideView: View {
                 .padding(.top, 16)
                 .padding(.bottom, 16)
 
-            Divider().padding(.horizontal, 20)
+            if phase == .matched || phase == .driverEnRoute || phase == .driverArrived {
+                Divider().padding(.horizontal, 20)
 
-            // Row 4 — Cancel
-            Button(action: { showCancelConfirm = true }) {
-                Text("Cancel ride")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundColor(.brandRed)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 16)
+                Button(action: { showCancelConfirm = true }) {
+                    Text("Cancel ride")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundColor(.brandRed)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 16)
+                }
+                .disabled(isCancelling)
             }
-            .disabled(isCancelling)
 
             Spacer(minLength: 0)
                 .frame(height: 20)
@@ -285,6 +286,85 @@ struct MatchedRideView: View {
         .background(Color.cardBackground)
         .cornerRadius(20, corners: [.topLeft, .topRight])
         .shadow(color: .black.opacity(0.12), radius: 20, x: 0, y: -4)
+    }
+
+    // MARK: - Phase-Aware Status Row
+
+    @ViewBuilder
+    private var statusRow: some View {
+        switch phase {
+        case .matched, .driverEnRoute:
+            pickupInstructionRow
+
+        case .driverArrived:
+            VStack(spacing: 10) {
+                HStack(spacing: 10) {
+                    Image(systemName: "location.fill")
+                        .font(.system(size: 20, weight: .semibold))
+                        .foregroundColor(.brandGreen)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("Driver has arrived!")
+                            .font(.system(size: 16, weight: .bold))
+                            .foregroundColor(.textPrimary)
+                        Text("Head to your pickup spot")
+                            .font(.system(size: 13))
+                            .foregroundColor(.textSecondary)
+                    }
+                    Spacer()
+                }
+                PrimaryButton(title: "I'm in the Car", icon: "checkmark.circle.fill", isEnabled: true) {
+                    withAnimation { phase = .inTrip }
+                }
+                Text("Tap once you're seated and ready to go")
+                    .font(.system(size: 13))
+                    .foregroundColor(.textSecondary)
+            }
+
+        case .inTrip:
+            HStack(spacing: 14) {
+                Image(systemName: "arrow.triangle.turn.up.right.circle.fill")
+                    .font(.system(size: 28))
+                    .foregroundColor(.brand)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("You're on your way!")
+                        .font(.system(size: 16, weight: .bold))
+                        .foregroundColor(.textPrimary)
+                    Text("Sit back and enjoy the ride")
+                        .font(.system(size: 13))
+                        .foregroundColor(.textSecondary)
+                }
+                Spacer()
+            }
+
+        case .completed:
+            HStack(spacing: 14) {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 28))
+                    .foregroundColor(.brandGreen)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Trip completed!")
+                        .font(.system(size: 16, weight: .bold))
+                        .foregroundColor(.textPrimary)
+                    Text("Hope you enjoyed the ride")
+                        .font(.system(size: 13))
+                        .foregroundColor(.textSecondary)
+                }
+                Spacer()
+            }
+
+        case .cancelled:
+            HStack(spacing: 14) {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.system(size: 28))
+                    .foregroundColor(.brandRed)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Trip was cancelled.")
+                        .font(.system(size: 16, weight: .bold))
+                        .foregroundColor(.textPrimary)
+                }
+                Spacer()
+            }
+        }
     }
 
     // MARK: - Pickup Instruction Row

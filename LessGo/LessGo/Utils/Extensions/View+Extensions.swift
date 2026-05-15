@@ -200,6 +200,20 @@ struct ShimmerModifier: ViewModifier {
     }
 }
 
+// MARK: - Debug Pill
+
+extension View {
+    func debugPill(disabled: Bool = false) -> some View {
+        self
+            .font(.system(size: 12, weight: .semibold))
+            .foregroundColor(disabled ? .textTertiary : .brand)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 7)
+            .background(Color.brand.opacity(disabled ? 0.05 : 0.1))
+            .cornerRadius(8)
+    }
+}
+
 // MARK: - Transparent Nav Bar Modifier
 struct TransparentNavBarModifier: ViewModifier {
     func body(content: Content) -> some View {

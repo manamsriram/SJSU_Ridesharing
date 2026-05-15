@@ -1839,7 +1839,6 @@ private struct RiderTripDetailsView: View {
     @State private var driver: User?
     @State private var isLoading = true
     @State private var errorMessage: String?
-
     var body: some View {
         NavigationView {
             ScrollView {

@@ -913,17 +913,6 @@ private struct PickupStop {
 
 // MARK: - Debug Pill Helper
 
-private extension View {
-    func debugPill() -> some View {
-        self
-            .font(.system(size: 12, weight: .semibold))
-            .foregroundColor(.brand)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 7)
-            .background(Color.brand.opacity(0.1))
-            .cornerRadius(8)
-    }
-}
 
 
 // MARK: - Pending Booking Card
