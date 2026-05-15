@@ -16,6 +16,7 @@ async function importEmailService() {
     default: {
       createTransport: nodemailerMocks.createTransport,
     },
+    createTransport: nodemailerMocks.createTransport,
   }));
 
   return import('../../services/notification-service/src/services/email.service');
