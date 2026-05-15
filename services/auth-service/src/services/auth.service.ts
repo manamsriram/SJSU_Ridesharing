@@ -18,7 +18,7 @@ export const createUser = async (
   userData: RegisterRequest,
   sjsuIdImagePath?: string
 ): Promise<SafeUser> => {
-  const { name, email, password, role } = userData;
+  const { name, email, password } = userData;
 
   if (!email.toLowerCase().endsWith('@sjsu.edu')) {
     throw new Error('Only @sjsu.edu email addresses are allowed');
@@ -44,7 +44,7 @@ export const createUser = async (
     name,
     email.toLowerCase(),
     passwordHash,
-    role,
+    UserRole.Rider,
     sjsuIdImagePath || null,
     SJSUIdStatus.Pending, // Default status
   ];

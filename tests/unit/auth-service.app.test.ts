@@ -137,7 +137,6 @@ describe('services/auth-service app routes', () => {
         email: 'not-an-email',
         name: 'A',
         password: 'weak',
-        role: 'Admin',
       },
     });
 
@@ -149,7 +148,6 @@ describe('services/auth-service app routes', () => {
         'Name must be between 2 and 255 characters',
         'Invalid email format',
         'Password must be at least 8 characters long',
-        'Role must be either Driver or Rider',
       ])
     );
     expect(authServiceMocks.createUser).not.toHaveBeenCalled();
@@ -180,7 +178,6 @@ describe('services/auth-service app routes', () => {
       expect.objectContaining({
         email: userRecord.email,
         name: userRecord.name,
-        role: UserRole.Rider,
       }),
       undefined
     );

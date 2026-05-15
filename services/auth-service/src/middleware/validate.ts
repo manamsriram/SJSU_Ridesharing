@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { body, validationResult } from 'express-validator';
-import { UserRole, isValidEmail, validatePassword } from '@lessgo/shared';
+import { isValidEmail, validatePassword } from '@lessgo/shared';
 
 /**
  * Validation middleware to check for validation errors
@@ -55,12 +55,6 @@ export const registerValidation = [
       }
       return true;
     }),
-
-  body('role')
-    .notEmpty()
-    .withMessage('Role is required')
-    .isIn([UserRole.Driver, UserRole.Rider])
-    .withMessage('Role must be either Driver or Rider'),
 
   validate,
 ];

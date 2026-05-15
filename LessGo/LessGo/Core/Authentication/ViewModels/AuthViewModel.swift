@@ -111,12 +111,12 @@ class AuthViewModel: ObservableObject {
 
     // MARK: - Register
 
-    func register(name: String, email: String, password: String, role: UserRole) async {
+    func register(name: String, email: String, password: String) async {
         isLoading = true
         errorMessage = nil
         defer { isLoading = false }
         do {
-            _ = try await authService.register(name: name, email: email, password: password, role: role)
+            _ = try await authService.register(name: name, email: email, password: password)
             pendingVerificationEmail = email
             UINotificationFeedbackGenerator().notificationOccurred(.success)
         } catch let error as NetworkError {

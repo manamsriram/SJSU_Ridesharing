@@ -9,7 +9,6 @@ struct SignUpView: View {
     @State private var email    = ""
     @State private var password = ""
     @State private var confirm  = ""
-    @State private var role: UserRole = .rider
 
     @State private var nameError:     String?
     @State private var emailError:    String?
@@ -41,12 +40,7 @@ struct SignUpView: View {
                             .kerning(1)
 
                         HStack(spacing: 12) {
-                            RolePill(title: "Rider", icon: "person.fill", isSelected: role == .rider) {
-                                withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) { role = .rider }
-                            }
-                            RolePill(title: "Driver", icon: "car.fill", isSelected: role == .driver) {
-                                withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) { role = .driver }
-                            }
+                            RolePill(title: "Rider", icon: "person.fill", isSelected: true) {}
                         }
                     }
                     .padding(.top, 18)
@@ -237,7 +231,7 @@ struct SignUpView: View {
 
         focusedField = nil
         Task {
-            await authVM.register(name: name, email: email, password: password, role: role)
+            await authVM.register(name: name, email: email, password: password)
 
             // Check for duplicate email error
             if let errorMsg = authVM.errorMessage,

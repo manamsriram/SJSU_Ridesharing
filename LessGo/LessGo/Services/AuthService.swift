@@ -17,14 +17,14 @@ class AuthService {
 
     // MARK: - Authentication
 
-    func register(name: String, email: String, password: String, role: UserRole) async throws -> RegisterResponse {
+    func register(name: String, email: String, password: String) async throws -> RegisterResponse {
         struct RegisterRequest: Encodable {
-            let name: String; let email: String; let password: String; let role: String
+            let name: String; let email: String; let password: String
         }
         let response: RegisterResponse = try await network.request(
             endpoint: "/auth/register",
             method: .post,
-            body: RegisterRequest(name: name, email: email, password: password, role: role.rawValue),
+            body: RegisterRequest(name: name, email: email, password: password),
             requiresAuth: false
         )
         return response
