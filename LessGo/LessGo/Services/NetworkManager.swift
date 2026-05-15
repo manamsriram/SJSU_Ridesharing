@@ -298,15 +298,19 @@ class NetworkManager {
 
     private func shouldRefreshToken(for statusCode: Int, data: Data) -> Bool {
         guard statusCode == 401 || statusCode == 403 else { return false }
-        guard statusCode == 403 else { return true }
 
         if let apiError = try? decoder.decode(APIError.self, from: data) {
             let message = apiError.message.lowercased()
+            // Only refresh for token-related errors, not credential failures
             return message.contains("expired token") ||
                 message.contains("token expired") ||
-                message.contains("invalid or expired token")
+                message.contains("invalid or expired token") ||
+                message.contains("invalid token") ||
+                message.contains("no token") ||
+                message.contains("token required")
         }
 
+        // For 403 without a parseable body, don't refresh
         return false
     }
 

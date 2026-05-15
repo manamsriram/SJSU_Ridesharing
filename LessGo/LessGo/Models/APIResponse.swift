@@ -79,7 +79,7 @@ enum NetworkError: Error {
         let msg = apiError.message.lowercased()
 
         // Auth errors
-        if msg.contains("invalid credentials") || msg.contains("invalid password") || msg.contains("incorrect password") {
+        if msg.contains("invalid credentials") || msg.contains("invalid password") || msg.contains("incorrect password") || msg.contains("invalid email or password") {
             return "Invalid email or password. Please try again."
         }
         if msg.contains("user not found") || msg.contains("no user found") {
