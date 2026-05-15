@@ -6,6 +6,7 @@ const authServiceMocks = vi.hoisted(() => ({
   changePassword: vi.fn(),
   createUser: vi.fn(),
   findUserById: vi.fn(),
+  findUserByEmail: vi.fn(),
   submitSJSUIdImage: vi.fn(),
   toSafeUser: vi.fn(),
   updateSJSUIdStatus: vi.fn(),
@@ -18,8 +19,14 @@ const jwtServiceMocks = vi.hoisted(() => ({
   verifyToken: vi.fn(),
 }));
 
+const otpServiceMocks = vi.hoisted(() => ({
+  generateAndSendOtp: vi.fn(),
+  verifyOtp: vi.fn(),
+}));
+
 vi.mock('../../services/auth-service/src/services/auth.service', () => authServiceMocks);
 vi.mock('../../services/auth-service/src/services/jwt.service', () => jwtServiceMocks);
+vi.mock('../../services/auth-service/src/services/otp.service', () => otpServiceMocks);
 
 let closeServer: (() => Promise<void>) | null = null;
 
@@ -67,6 +74,7 @@ beforeEach(() => {
   authServiceMocks.createUser.mockResolvedValue(userRecord);
   authServiceMocks.validateCredentials.mockResolvedValue(userRecord);
   authServiceMocks.findUserById.mockResolvedValue(userRecord);
+  authServiceMocks.findUserByEmail.mockResolvedValue(userRecord);
   authServiceMocks.submitSJSUIdImage.mockResolvedValue(safeUser);
   authServiceMocks.toSafeUser.mockReturnValue(safeUser);
   authServiceMocks.changePassword.mockResolvedValue(undefined);
@@ -87,6 +95,9 @@ beforeEach(() => {
     type: 'access',
     userId: userRecord.user_id,
   });
+
+  otpServiceMocks.generateAndSendOtp.mockResolvedValue(undefined);
+  otpServiceMocks.verifyOtp.mockResolvedValue(safeUser);
 });
 
 afterEach(async () => {
@@ -149,7 +160,7 @@ describe('services/auth-service app routes', () => {
 
     const response = await requestJson<{
       status: string;
-      data: { accessToken: string; refreshToken: string; user: { email: string } };
+      data: { user_id: string };
     }>({
       baseUrl: server.baseUrl,
       method: 'POST',
@@ -164,9 +175,7 @@ describe('services/auth-service app routes', () => {
 
     expect(response.status).toBe(201);
     expect(response.body.status).toBe('success');
-    expect(response.body.data.user.email).toBe(userRecord.email);
-    expect(response.body.data.accessToken).toBe('access-token');
-    expect(response.body.data.refreshToken).toBe('refresh-token');
+    expect(response.body.data.user_id).toBe(userRecord.user_id);
     expect(authServiceMocks.createUser).toHaveBeenCalledWith(
       expect.objectContaining({
         email: userRecord.email,
@@ -175,11 +184,9 @@ describe('services/auth-service app routes', () => {
       }),
       undefined
     );
-    expect(jwtServiceMocks.generateTokenPair).toHaveBeenCalledWith(
+    expect(otpServiceMocks.generateAndSendOtp).toHaveBeenCalledWith(
       userRecord.user_id,
-      userRecord.email,
-      userRecord.role,
-      userRecord.sjsu_id_status
+      userRecord.email
     );
   });
 
