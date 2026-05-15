@@ -52,6 +52,7 @@ struct ActiveTripView: View {
     // Multi-rider simulation support
     @State private var allPassengers: [BookingWithRider] = []
     @State private var simulationRouteStops: [SimulationRouteStop] = []
+    @State private var stopArrivalTimes: [Date?] = []
     @State private var currentSimulationStep: Int = 0
     @State private var currentPickupIndex: Int = 0
     @State private var showSimulationDebug = false
@@ -140,6 +141,7 @@ struct ActiveTripView: View {
                 return
             }
 
+            allPassengers = initialPassengers
             startTracking()
             if let points = try? await tripService.getAnchorPoints(tripId: trip.id), !points.isEmpty {
                 anchorPoints = points
@@ -329,7 +331,7 @@ struct ActiveTripView: View {
     private var postRideSummaryMainCard: some View {
         VStack(alignment: .leading, spacing: 12) {
             postRideSummaryHeader
-            postRideSummaryRouteCard
+            postRideSummaryStopTimeline
             postRideSummaryDetailsCard
             HStack(spacing: 10) {
                 summaryChip(icon: "checkmark.shield.fill", text: isDriver ? "Driver view" : "Rider view", tint: .brand)
@@ -367,38 +369,6 @@ struct ActiveTripView: View {
         }
     }
 
-    // Origin → destination route display.
-    @ViewBuilder
-    private var postRideSummaryRouteCard: some View {
-        let cardBackground = RoundedRectangle(cornerRadius: 14, style: .continuous)
-            .fill(Color.sheetBackground)
-            .overlay(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .strokeBorder(DesignSystem.Colors.border.opacity(0.7), lineWidth: 1)
-            )
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 10) {
-                Circle().fill(Color.brand).frame(width: 8, height: 8)
-                Text(trip.origin)
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundColor(.textPrimary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            HStack(spacing: 10) {
-                Image(systemName: "flag.fill")
-                    .font(.system(size: 11))
-                    .foregroundColor(.brandGreen)
-                    .frame(width: 8)
-                Text(trip.destination)
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundColor(.textPrimary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        }
-        .padding(14)
-        .background(cardBackground)
-    }
-
     // Summary rows (date, driver/rider, settlement or booking details).
     @ViewBuilder
     private var postRideSummaryDetailsCard: some View {
@@ -411,23 +381,27 @@ struct ActiveTripView: View {
         VStack(spacing: 10) {
             summaryRow("Date", trip.departureTime.tripDateString)
             summaryRow("Time", trip.departureTime.tripTimeString)
-            summaryRow(isDriver ? "Rider" : "Driver", otherPartyName)
+            if !isDriver || paidPassengers.count <= 1 {
+                summaryRow(isDriver ? "Rider" : "Driver", otherPartyName)
+            }
             summaryRow("Trip Status", tripStatus.displayName)
             if isDriver {
-                if let s = settlement {
-                    summaryRow("Riders", "\(s.riderCount)")
-                    summaryRow("Distance", String(format: "%.1f mi", s.breakdown.directDistanceMiles))
-                    summaryRow("Total Earnings", String(format: "$%.2f", s.driverEarnings), valueColor: .brandGreen, bold: true)
-                } else if let booking {
-                    summaryRow("Seats", "\(booking.seatsBooked)")
-                    summaryRow("Booking ID", "\(String(booking.id.prefix(8)))…")
+                summaryRow("Riders", "\(settlement?.riderCount ?? paidPassengers.count)")
+                if let dist = settlement?.breakdown.directDistanceMiles {
+                    summaryRow("Distance", String(format: "%.1f mi", dist))
+                }
+                if let earnings = displayDriverEarnings {
+                    let label = settlement != nil ? "Total Earnings" : "Est. Earnings"
+                    summaryRow(label, String(format: "$%.2f", earnings), valueColor: .brandGreen, bold: true)
                 }
             } else {
                 if let booking {
                     summaryRow("Seats", "\(booking.seatsBooked)")
                     summaryRow("Booking ID", "\(String(booking.id.prefix(8)))…")
                     if let quote = booking.quote {
-                        summaryRow("Your Fare", String(format: "$%.2f", quote.maxPrice), valueColor: .brandGreen, bold: true)
+                        let label = quote.finalPrice != nil ? "Fare Charged" : "Fare (Hold)"
+                        let amount = quote.finalPrice ?? quote.maxPrice
+                        summaryRow(label, String(format: "$%.2f", amount), valueColor: .brandGreen, bold: true)
                     }
                     if let payment = booking.payment {
                         summaryRow("Payment", payment.status.rawValue.capitalized)
@@ -463,6 +437,64 @@ struct ActiveTripView: View {
                 .padding(.vertical, 14)
                 .background(DesignSystem.Colors.actionDarkSurface)
                 .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        }
+    }
+
+    // MARK: - Live Route Stops Card
+
+    @ViewBuilder
+    private var liveRouteStopsCard: some View {
+        let pickups = isDriver ? driverPickupStops : []
+        VStack(spacing: 0) {
+            liveStopRow(dot: Color.brandGold, label: trip.origin, sublabel: nil, isLast: pickups.isEmpty)
+            ForEach(Array(pickups.enumerated()), id: \.offset) { i, stop in
+                liveStopRow(dot: Color.brandTeal, label: stop.name, sublabel: stop.address, isLast: false)
+            }
+            liveStopRow(dot: Color.brandGreen, label: trip.destination, sublabel: nil, isLast: true)
+        }
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(Color.sheetBackground)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .strokeBorder(DesignSystem.Colors.border.opacity(0.7), lineWidth: 1)
+                )
+        )
+    }
+
+    private func liveStopRow(dot: Color, label: String, sublabel: String?, isLast: Bool) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            VStack(spacing: 0) {
+                Circle()
+                    .fill(dot)
+                    .frame(width: 10, height: 10)
+                    .padding(.top, 4)
+                if !isLast {
+                    Rectangle()
+                        .fill(Color.gray.opacity(0.3))
+                        .frame(width: 2)
+                        .frame(maxHeight: .infinity)
+                        .padding(.vertical, 2)
+                }
+            }
+            .frame(width: 10)
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text(label)
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundColor(.textPrimary)
+                    .lineLimit(1)
+                if let sub = sublabel {
+                    Text(sub)
+                        .font(.system(size: 11))
+                        .foregroundColor(.textSecondary)
+                        .lineLimit(1)
+                }
+            }
+            .padding(.bottom, isLast ? 0 : 12)
+
+            Spacer()
         }
     }
 
@@ -535,41 +567,7 @@ struct ActiveTripView: View {
                             .cornerRadius(999)
                     }
 
-                    HStack(spacing: 12) {
-                        VStack(spacing: 4) {
-                            Circle()
-                                .fill(Color.brandGold)
-                                .frame(width: 10, height: 10)
-                            Rectangle()
-                                .fill(Color.gray.opacity(0.3))
-                                .frame(width: 2, height: 20)
-                            Circle()
-                                .fill(Color.brandGreen)
-                                .frame(width: 10, height: 10)
-                        }
-
-                        VStack(alignment: .leading, spacing: 16) {
-                            Text(trip.origin)
-                                .font(.system(size: 14, weight: .medium))
-                                .foregroundColor(.textPrimary)
-                                .lineLimit(1)
-                            Text(trip.destination)
-                                .font(.system(size: 14, weight: .medium))
-                                .foregroundColor(.textPrimary)
-                                .lineLimit(1)
-                        }
-
-                        Spacer()
-                    }
-                    .padding(12)
-                    .background(
-                        RoundedRectangle(cornerRadius: 14, style: .continuous)
-                            .fill(Color.sheetBackground)
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                    .strokeBorder(DesignSystem.Colors.border.opacity(0.7), lineWidth: 1)
-                            )
-                    )
+                    liveRouteStopsCard
 
                     liveTrackingSummary
 
@@ -612,12 +610,12 @@ struct ActiveTripView: View {
 
     @ViewBuilder
     private var otherPartyInfo: some View {
-        if isDriver && initialPassengers.count > 1 {
+        if isDriver && !paidPassengers.isEmpty {
             VStack(alignment: .leading, spacing: 8) {
-                Text("Passengers (\(initialPassengers.count))")
+                Text(paidPassengers.count == 1 ? "Passenger" : "Passengers (\(paidPassengers.count))")
                     .font(.system(size: 13, weight: .bold))
                     .foregroundColor(.textSecondary)
-                ForEach(initialPassengers) { passenger in
+                ForEach(paidPassengers) { passenger in
                     HStack(spacing: 12) {
                         ZStack {
                             Circle()
@@ -1217,9 +1215,9 @@ struct ActiveTripView: View {
         // Clear stale position so the second run doesn't start at the previous destination.
         locationService.currentLocation = nil
 
-        // Use pre-loaded passengers — no network call needed.
-        allPassengers = initialPassengers
-        let simPickups = initialPassengers.reduce(into: [String: PickupLocation]()) { result, p in
+        // Use pre-loaded passengers — no network call needed. Only simulate paid riders.
+        allPassengers = initialPassengers.filter { $0.paymentIntentId != nil }
+        let simPickups = allPassengers.reduce(into: [String: PickupLocation]()) { result, p in
             if let pickup = p.pickupLocation { result[p.id] = pickup }
         }
         await MainActor.run { riderPickupLocations = simPickups }
@@ -1236,8 +1234,10 @@ struct ActiveTripView: View {
         let pickups = orderedPairs.map { $0.coordinate }
         let resolvedPickups = pickups.isEmpty ? [originFallback ?? resolvedStart] : pickups
 
-        // Populate debug stops list.
+        // Populate debug stops list and initialize arrival time tracking.
         simulationRouteStops = buildSimulationRoute(start: resolvedStart, orderedPairs: orderedPairs, dropoff: resolvedDropoff)
+        stopArrivalTimes = Array(repeating: nil, count: simulationRouteStops.count)
+        stopArrivalTimes[0] = Date()
 
         await MainActor.run {
             withAnimation { tripStatus = .enRoute }
@@ -1262,6 +1262,7 @@ struct ActiveTripView: View {
             )
             await waitForSimulationToFinish(maxSeconds: 30)
             legStart = locationService.currentLocation?.coordinate ?? pickup
+            if index + 1 < stopArrivalTimes.count { stopArrivalTimes[index + 1] = Date() }
 
             if isLast {
                 await MainActor.run { withAnimation { tripStatus = .arrived } }
@@ -1289,6 +1290,7 @@ struct ActiveTripView: View {
             stepInterval: 0.22, steps: 75
         )
         await waitForSimulationToFinish(maxSeconds: 35)
+        if !stopArrivalTimes.isEmpty { stopArrivalTimes[stopArrivalTimes.count - 1] = Date() }
 
         await MainActor.run {
             withAnimation { tripStatus = .completed }
@@ -1325,6 +1327,8 @@ struct ActiveTripView: View {
         let pickup = focusedPickupCoordinate ?? trip.originPoint?.clLocationCoordinate2D ?? fallbackStart
         let dropoff = trip.destinationPoint?.clLocationCoordinate2D ?? pickup
 
+        stopArrivalTimes = [Date(), nil, nil]
+
         await MainActor.run {
             withAnimation { tripStatus = .enRoute }
             simulationPickupCoord = pickup
@@ -1343,6 +1347,7 @@ struct ActiveTripView: View {
             )
             await waitForSimulationToFinish(maxSeconds: 25)
         }
+        stopArrivalTimes[1] = Date()
 
         await MainActor.run {
             withAnimation { tripStatus = .arrived }
@@ -1366,6 +1371,7 @@ struct ActiveTripView: View {
             )
             await waitForSimulationToFinish(maxSeconds: 30)
         }
+        stopArrivalTimes[2] = Date()
 
         await MainActor.run {
             withAnimation { tripStatus = .completed }
@@ -1736,6 +1742,164 @@ struct ActiveTripView: View {
             showError = true
             UINotificationFeedbackGenerator().notificationOccurred(.error)
         }
+    }
+
+    private var paidPassengers: [BookingWithRider] {
+        allPassengers.filter { $0.paymentIntentId != nil }
+    }
+
+    private var displayDriverEarnings: Double? {
+        if let s = settlement { return s.driverEarnings }
+        let fares = paidPassengers.compactMap { $0.fare }
+        if !fares.isEmpty { return fares.reduce(0, +) }
+        return trip.totalPayout
+    }
+
+    private func formatStopTime(_ date: Date?) -> String {
+        guard let date else { return "–" }
+        let f = DateFormatter()
+        f.dateFormat = "h:mm a"
+        return f.string(from: date)
+    }
+
+    @ViewBuilder
+    private func stopTimelineRow(
+        iconName: String,
+        iconColor: Color,
+        iconBadge: String?,
+        title: String,
+        subtitle: String?,
+        time: Date?,
+        isLast: Bool
+    ) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            VStack(spacing: 0) {
+                ZStack {
+                    Circle()
+                        .fill(iconColor.opacity(0.15))
+                        .frame(width: 28, height: 28)
+                    if let badge = iconBadge {
+                        Text(badge)
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundColor(iconColor)
+                    } else {
+                        Image(systemName: iconName)
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundColor(iconColor)
+                    }
+                }
+                if !isLast {
+                    Rectangle()
+                        .fill(Color.gray.opacity(0.25))
+                        .frame(width: 2)
+                        .frame(maxHeight: .infinity)
+                        .padding(.vertical, 2)
+                }
+            }
+            .frame(width: 28)
+
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(alignment: .firstTextBaseline) {
+                    Text(title)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(.textPrimary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer()
+                    Text(formatStopTime(time))
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundColor(time != nil ? .textSecondary : .textTertiary)
+                }
+                if let subtitle {
+                    Text(subtitle)
+                        .font(.system(size: 11))
+                        .foregroundColor(.textTertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .padding(.bottom, isLast ? 0 : 12)
+        }
+    }
+
+    @ViewBuilder
+    private var postRideSummaryStopTimeline: some View {
+        let cardBackground = RoundedRectangle(cornerRadius: 14, style: .continuous)
+            .fill(Color.sheetBackground)
+            .overlay(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .strokeBorder(DesignSystem.Colors.border.opacity(0.7), lineWidth: 1)
+            )
+
+        VStack(alignment: .leading, spacing: 0) {
+            if isDriver {
+                driverStopTimeline
+            } else {
+                riderStopTimeline
+            }
+        }
+        .padding(14)
+        .background(cardBackground)
+    }
+
+    private var driverPickupStops: [(name: String, address: String?, time: Date?)] {
+        if isSimulationMode {
+            let paidByName: [String: BookingWithRider] = Dictionary(
+                paidPassengers.map { ($0.riderName, $0) }, uniquingKeysWith: { a, _ in a }
+            )
+            return simulationRouteStops.indices.compactMap { i in
+                guard case .pickup(let riderName) = simulationRouteStops[i].type,
+                      let passenger = paidByName[riderName] else { return nil }
+                let time: Date? = stopArrivalTimes.indices.contains(i) ? stopArrivalTimes[i] : nil
+                let addr: String? = passenger.pickupLocation?.address
+                    ?? passenger.pickupLocation.map { String(format: "%.4f, %.4f", $0.lat, $0.lng) }
+                return (name: riderName, address: addr, time: time)
+            }
+        } else {
+            return orderedPassengersWithPickups
+                .filter { $0.passenger.paymentIntentId != nil }
+                .map { pair in
+                    let addr = pair.passenger.pickupLocation?.address
+                        ?? (pair.passenger.pickupLocation.map { String(format: "%.4f, %.4f", $0.lat, $0.lng) })
+                    return (name: pair.passenger.riderName, address: addr, time: nil)
+                }
+        }
+    }
+
+    @ViewBuilder
+    private var driverStopTimeline: some View {
+        let pickupStops = driverPickupStops
+        let originTime: Date? = isSimulationMode ? stopArrivalTimes.first ?? nil : trip.startedAt
+        let destTime: Date? = isSimulationMode ? stopArrivalTimes.last ?? nil : trip.completedAt
+
+        stopTimelineRow(iconName: "circle.fill", iconColor: .brand, iconBadge: nil,
+                        title: trip.origin, subtitle: nil, time: originTime, isLast: false)
+
+        ForEach(Array(pickupStops.enumerated()), id: \.offset) { i, stop in
+            stopTimelineRow(iconName: "", iconColor: .brandTeal, iconBadge: "\(i + 1)",
+                            title: stop.name, subtitle: stop.address, time: stop.time,
+                            isLast: false)
+        }
+
+        stopTimelineRow(iconName: "flag.fill", iconColor: .brandGreen, iconBadge: nil,
+                        title: trip.destination, subtitle: nil, time: destTime, isLast: true)
+    }
+
+    @ViewBuilder
+    private var riderStopTimeline: some View {
+        let originTime: Date? = isSimulationMode ? (stopArrivalTimes.indices.contains(0) ? stopArrivalTimes[0] : nil) : trip.startedAt
+        let pickupTime: Date? = isSimulationMode ? (stopArrivalTimes.indices.contains(1) ? stopArrivalTimes[1] : nil) : booking?.riderPickupConfirmedAt
+        let destTime: Date? = isSimulationMode ? (stopArrivalTimes.indices.contains(2) ? stopArrivalTimes[2] : nil) : trip.completedAt
+
+        let pickupAddress: String? = {
+            guard let loc = booking?.pickupLocation else { return nil }
+            return loc.address ?? String(format: "%.4f, %.4f", loc.lat, loc.lng)
+        }()
+
+        stopTimelineRow(iconName: "circle.fill", iconColor: .brand, iconBadge: nil,
+                        title: trip.origin, subtitle: nil, time: originTime, isLast: false)
+        stopTimelineRow(iconName: "", iconColor: .brandTeal, iconBadge: "P",
+                        title: "Your Pickup", subtitle: pickupAddress, time: pickupTime, isLast: false)
+        stopTimelineRow(iconName: "flag.fill", iconColor: .brandGreen, iconBadge: nil,
+                        title: trip.destination, subtitle: nil, time: destTime, isLast: true)
     }
 
     private func summaryRow(_ label: String, _ value: String, valueColor: Color = .textPrimary, bold: Bool = false) -> some View {

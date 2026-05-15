@@ -18,6 +18,10 @@ struct Trip: Codable, Identifiable {
     let totalQuoted: Double?
     let recurrence: String?
     let status: TripStatus
+    let startedAt: Date?
+    let arrivedAt: Date?
+    let pickupCompletedAt: Date?
+    let completedAt: Date?
     let createdAt: Date
     let updatedAt: Date
     let driver: User?
@@ -37,6 +41,10 @@ struct Trip: Codable, Identifiable {
         totalQuoted: Double? = nil,
         recurrence: String?,
         status: TripStatus,
+        startedAt: Date? = nil,
+        arrivedAt: Date? = nil,
+        pickupCompletedAt: Date? = nil,
+        completedAt: Date? = nil,
         createdAt: Date,
         updatedAt: Date,
         driver: User?
@@ -55,6 +63,10 @@ struct Trip: Codable, Identifiable {
         self.totalQuoted = totalQuoted
         self.recurrence = recurrence
         self.status = status
+        self.startedAt = startedAt
+        self.arrivedAt = arrivedAt
+        self.pickupCompletedAt = pickupCompletedAt
+        self.completedAt = completedAt
         self.createdAt = createdAt
         self.updatedAt = updatedAt
         self.driver = driver
@@ -73,6 +85,10 @@ struct Trip: Codable, Identifiable {
         case totalPayout = "total_payout"
         case totalQuoted = "total_quoted"
         case recurrence, status
+        case startedAt = "started_at"
+        case arrivedAt = "arrived_at"
+        case pickupCompletedAt = "pickup_completed_at"
+        case completedAt = "completed_at"
         case createdAt = "created_at"
         case updatedAt = "updated_at"
         case driver
@@ -94,6 +110,10 @@ struct Trip: Codable, Identifiable {
         totalQuoted = try container.decodeIfPresent(Double.self, forKey: .totalQuoted)
         recurrence = try container.decodeIfPresent(String.self, forKey: .recurrence)
         status = try Self.decodeStatus(from: container)
+        startedAt = try container.decodeIfPresent(Date.self, forKey: .startedAt)
+        arrivedAt = try container.decodeIfPresent(Date.self, forKey: .arrivedAt)
+        pickupCompletedAt = try container.decodeIfPresent(Date.self, forKey: .pickupCompletedAt)
+        completedAt = try container.decodeIfPresent(Date.self, forKey: .completedAt)
         createdAt = try container.decode(Date.self, forKey: .createdAt)
         updatedAt = try container.decode(Date.self, forKey: .updatedAt)
         driver = try container.decodeIfPresent(User.self, forKey: .driver)
@@ -115,6 +135,10 @@ struct Trip: Codable, Identifiable {
         try c.encodeIfPresent(totalQuoted, forKey: .totalQuoted)
         try c.encodeIfPresent(recurrence, forKey: .recurrence)
         try c.encode(status, forKey: .status)
+        try c.encodeIfPresent(startedAt, forKey: .startedAt)
+        try c.encodeIfPresent(arrivedAt, forKey: .arrivedAt)
+        try c.encodeIfPresent(pickupCompletedAt, forKey: .pickupCompletedAt)
+        try c.encodeIfPresent(completedAt, forKey: .completedAt)
         try c.encode(createdAt, forKey: .createdAt)
         try c.encode(updatedAt, forKey: .updatedAt)
         try c.encodeIfPresent(driver, forKey: .driver)
