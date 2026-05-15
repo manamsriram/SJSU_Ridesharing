@@ -83,7 +83,13 @@ export async function generateAndSendOtp(userId: string, email: string): Promise
     [userId, otpHash, expiresAt]
   );
 
-  await sendOtpEmail(email, otp);
+  try {
+    await sendOtpEmail(email, otp);
+  } catch (err) {
+    // SMTP misconfiguration must not block registration — log and fall through
+    console.error('[OTP] Email send failed, falling back to console stub:', (err as Error).message);
+    console.log(`[OTP STUB] Code for ${email}: ${otp}`);
+  }
 }
 
 /**

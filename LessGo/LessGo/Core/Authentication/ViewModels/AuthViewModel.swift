@@ -107,6 +107,8 @@ class AuthViewModel: ObservableObject {
         }
     }
 
+    @Published var pendingVerificationEmail: String?
+
     // MARK: - Register
 
     func register(name: String, email: String, password: String, role: UserRole) async {
@@ -114,7 +116,27 @@ class AuthViewModel: ObservableObject {
         errorMessage = nil
         defer { isLoading = false }
         do {
-            let response = try await authService.register(name: name, email: email, password: password, role: role)
+            _ = try await authService.register(name: name, email: email, password: password, role: role)
+            pendingVerificationEmail = email
+            UINotificationFeedbackGenerator().notificationOccurred(.success)
+        } catch let error as NetworkError {
+            errorMessage = error.userMessage
+            UINotificationFeedbackGenerator().notificationOccurred(.error)
+        } catch {
+            errorMessage = "Something went wrong. Please try again."
+            UINotificationFeedbackGenerator().notificationOccurred(.error)
+        }
+    }
+
+    // MARK: - Email OTP Verification
+
+    func verifyEmail(email: String, otp: String) async {
+        isLoading = true
+        errorMessage = nil
+        defer { isLoading = false }
+        do {
+            let response = try await authService.verifyEmail(email: email, otp: otp)
+            pendingVerificationEmail = nil
             currentUser = response.user
             isAuthenticated = true
             refreshSavedLoginProfiles()
@@ -123,7 +145,21 @@ class AuthViewModel: ObservableObject {
             errorMessage = error.userMessage
             UINotificationFeedbackGenerator().notificationOccurred(.error)
         } catch {
-            errorMessage = (error as? NetworkError)?.userMessage ?? "Something went wrong. Please try again."
+            errorMessage = "Verification failed. Please try again."
+            UINotificationFeedbackGenerator().notificationOccurred(.error)
+        }
+    }
+
+    func resendOtp(email: String) async {
+        isLoading = true
+        errorMessage = nil
+        defer { isLoading = false }
+        do {
+            try await authService.resendOtp(email: email)
+        } catch let error as NetworkError {
+            errorMessage = error.userMessage
+        } catch {
+            errorMessage = "Failed to resend code. Please try again."
         }
     }
 

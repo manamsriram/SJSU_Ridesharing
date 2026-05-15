@@ -18,6 +18,7 @@ struct SignUpView: View {
 
     @State private var showIDVerification = false
     @State private var showDuplicateEmailAlert = false
+    @State private var showEmailVerification = false
     @FocusState private var focusedField: Field?
 
     enum Field { case name, email, password, confirm }
@@ -194,13 +195,16 @@ struct SignUpView: View {
                     }
                 }
             }
+            .onChange(of: authVM.pendingVerificationEmail) { _, email in
+                if email != nil { showEmailVerification = true }
+            }
             .onChange(of: authVM.isAuthenticated) { _, loggedIn in
-                if loggedIn {
-                    dismiss()
-                    // Prompt ID verification after small delay
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                        authVM.showIDVerification = true
-                    }
+                if loggedIn { dismiss() }
+            }
+            .sheet(isPresented: $showEmailVerification) {
+                if let email = authVM.pendingVerificationEmail {
+                    EmailVerificationView(email: email)
+                        .environmentObject(authVM)
                 }
             }
             .alert("Email Already Registered", isPresented: $showDuplicateEmailAlert) {

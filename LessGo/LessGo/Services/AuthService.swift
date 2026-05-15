@@ -1,6 +1,12 @@
 import Foundation
 import UIKit
 
+// MARK: - Register response (no tokens — user must verify email first)
+struct RegisterResponse: Codable {
+    let userId: String
+    enum CodingKeys: String, CodingKey { case userId = "user_id" }
+}
+
 // MARK: - Auth Service
 
 class AuthService {
@@ -11,51 +17,42 @@ class AuthService {
 
     // MARK: - Authentication
 
-    func register(name: String, email: String, password: String, role: UserRole) async throws -> AuthResponse {
-        let request = RegisterRequest(
-            name: name,
-            email: email,
-            password: password,
-            role: role
+    func register(name: String, email: String, password: String, role: UserRole) async throws -> RegisterResponse {
+        struct RegisterRequest: Encodable {
+            let name: String; let email: String; let password: String; let role: String
+        }
+        let response: RegisterResponse = try await network.request(
+            endpoint: "/auth/register",
+            method: .post,
+            body: RegisterRequest(name: name, email: email, password: password, role: role.rawValue),
+            requiresAuth: false
         )
+        return response
+    }
 
-        #if DEBUG
-        let encoder = JSONEncoder()
-        if let bodyData = try? encoder.encode(request),
-           let bodyString = String(data: bodyData, encoding: .utf8) {
-            print("[AuthService] register() payload: \(bodyString)")
-        }
-        #endif
+    func verifyEmail(email: String, otp: String) async throws -> AuthResponse {
+        struct VerifyRequest: Encodable { let email: String; let otp: String }
+        let response: AuthResponse = try await network.request(
+            endpoint: "/auth/verify-email",
+            method: .post,
+            body: VerifyRequest(email: email, otp: otp),
+            requiresAuth: false
+        )
+        KeychainManager.shared.saveAccessToken(response.accessToken)
+        KeychainManager.shared.saveRefreshToken(response.refreshToken)
+        KeychainManager.shared.saveUserId(response.user.id)
+        SavedAccountManager.shared.saveSession(user: response.user, accessToken: response.accessToken, refreshToken: response.refreshToken)
+        return response
+    }
 
-        do {
-            let response: AuthResponse = try await network.request(
-                endpoint: "/auth/register",
-                method: .post,
-                body: request,
-                requiresAuth: false
-            )
-
-            // Save tokens
-            KeychainManager.shared.saveAccessToken(response.accessToken)
-            KeychainManager.shared.saveRefreshToken(response.refreshToken)
-            KeychainManager.shared.saveUserId(response.user.id)
-            SavedAccountManager.shared.saveSession(
-                user: response.user,
-                accessToken: response.accessToken,
-                refreshToken: response.refreshToken
-            )
-
-            #if DEBUG
-            print("[AuthService] register() success – userId: \(response.user.id)")
-            #endif
-
-            return response
-        } catch {
-            #if DEBUG
-            print("[AuthService] register() failed: \(error)")
-            #endif
-            throw error
-        }
+    func resendOtp(email: String) async throws {
+        struct ResendRequest: Encodable { let email: String }
+        let _: EmptyResponse = try await network.request(
+            endpoint: "/auth/resend-otp",
+            method: .post,
+            body: ResendRequest(email: email),
+            requiresAuth: false
+        )
     }
 
     func login(email: String, password: String) async throws -> AuthResponse {
