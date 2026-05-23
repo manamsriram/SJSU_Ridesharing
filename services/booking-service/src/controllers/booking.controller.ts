@@ -487,6 +487,28 @@ export const capturePayment = async (req: AuthRequest, res: Response): Promise<v
 };
 
 /**
+ * Cancel an unconfirmed PaymentIntent when rider backs out of the payment sheet.
+ * DELETE /api/bookings/:id/payment-intent
+ */
+export const deletePaymentIntent = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    if (!req.user) {
+      errorResponse(res, 'Authentication required', 401);
+      return;
+    }
+    const { id } = req.params;
+    await bookingService.cancelPaymentIntent(id, req.user.userId);
+    successResponse(res, null, 'Payment intent cancelled');
+  } catch (error) {
+    if (error instanceof AppError) {
+      errorResponse(res, error.message, error.statusCode);
+      return;
+    }
+    throw new AppError('Failed to cancel payment intent', 500);
+  }
+};
+
+/**
  * Confirm rider pickup (rider only)
  * POST /api/bookings/:id/confirm-pickup
  */

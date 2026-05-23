@@ -74,6 +74,8 @@ router.post('/:id/confirm-payment', authenticateToken, asyncHandler(bookingContr
 
 router.post('/:id/capture-payment', authenticateToken, asyncHandler(bookingController.capturePayment));
 
+router.delete('/:id/payment-intent', authenticateToken, asyncHandler(bookingController.deletePaymentIntent));
+
 router.delete('/:id', authenticateToken, asyncHandler(bookingController.deleteBooking));
 
 router.post(

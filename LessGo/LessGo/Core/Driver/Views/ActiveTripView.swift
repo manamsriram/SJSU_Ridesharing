@@ -607,9 +607,9 @@ struct ActiveTripView: View {
 
     @ViewBuilder
     private var otherPartyInfo: some View {
-        if isDriver && !paidPassengers.isEmpty {
+        if isDriver && paidPassengers.count > 1 {
             VStack(alignment: .leading, spacing: 8) {
-                Text(paidPassengers.count == 1 ? "Passenger" : "Passengers (\(paidPassengers.count))")
+                Text("Passengers (\(paidPassengers.count))")
                     .font(.system(size: 13, weight: .bold))
                     .foregroundColor(.textSecondary)
                 ForEach(paidPassengers) { passenger in
@@ -1213,7 +1213,7 @@ struct ActiveTripView: View {
         locationService.currentLocation = nil
 
         // Use pre-loaded passengers — no network call needed. Only simulate paid riders.
-        allPassengers = initialPassengers.filter { $0.paymentIntentId != nil }
+        allPassengers = initialPassengers.filter { $0.paymentConfirmedAt != nil }
         let simPickups = allPassengers.reduce(into: [String: PickupLocation]()) { result, p in
             if let pickup = p.pickupLocation { result[p.id] = pickup }
         }
@@ -1742,7 +1742,7 @@ struct ActiveTripView: View {
     }
 
     private var paidPassengers: [BookingWithRider] {
-        allPassengers.filter { $0.paymentIntentId != nil }
+        allPassengers.filter { $0.paymentConfirmedAt != nil }
     }
 
     private var displayDriverEarnings: Double? {
@@ -1852,7 +1852,7 @@ struct ActiveTripView: View {
             }
         } else {
             return orderedPassengersWithPickups
-                .filter { $0.passenger.paymentIntentId != nil }
+                .filter { $0.passenger.paymentConfirmedAt != nil }
                 .map { pair in
                     let addr = pair.passenger.pickupLocation?.address
                         ?? (pair.passenger.pickupLocation.map { String(format: "%.4f, %.4f", $0.lat, $0.lng) })

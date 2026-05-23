@@ -125,6 +125,17 @@ router.post(
   asyncHandler(tripController.processDeadlineCancellations)
 );
 
+router.post(
+  '/release-expired-holds',
+  (req: Request, res: Response, next: NextFunction) => {
+    if (req.headers['x-internal-service'] !== 'true') {
+      return res.status(403).json({ status: 'error', message: 'Forbidden' });
+    }
+    return next();
+  },
+  asyncHandler(tripController.releaseExpiredHolds)
+);
+
 /**
  * @route   POST /trips/:id/settle
  * @desc    Admin: manually re-trigger settlement for a completed trip

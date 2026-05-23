@@ -574,7 +574,7 @@ struct TripDetailView: View {
                         .strokeBorder(Color.brandGreen.opacity(0.5), lineWidth: 1)
                 )
 
-                let paymentDone = viewModel.paymentAuthorized || viewModel.booking?.paymentIntentId != nil
+                let paymentDone = viewModel.paymentAuthorized || viewModel.booking?.paymentConfirmedAt != nil
 
                 // Payment deadline banner — shown when payment has not yet been completed
                 if !paymentDone, let deadline = viewModel.paymentDeadlineAt {

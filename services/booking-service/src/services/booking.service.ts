@@ -762,6 +762,7 @@ export const getBookingsByTripId = async (tripId: string): Promise<{ bookings: a
       u.profile_picture_url as rider_picture,
       b.payment_intent_id,
       b.payment_deadline_at,
+      b.payment_confirmed_at,
       b.cancellation_reason,
       b.rider_pickup_confirmed_at,
       COALESCE(q.final_price, q.max_price) AS fare
@@ -1117,11 +1118,52 @@ export const confirmPayment = async (
   }
   await stripe.paymentIntents.confirm(paymentIntentId, confirmParams);
 
-  // Booking stays in 'approved' state — payment_authorized_at already signals authorization.
-  // It will move to 'completed' when the trip ends.
+  // Record that Stripe has confirmed the hold (requires_capture state — funds actually held).
+  // This is the source of truth for "payment held" in the driver's passenger list.
+  await pool.query(
+    `UPDATE bookings SET payment_confirmed_at = NOW(), updated_at = current_timestamp WHERE booking_id = $1`,
+    [bookingId]
+  );
 
   const updatedBooking = await getBookingById(bookingId);
   return updatedBooking!;
+};
+
+/**
+ * Cancel an unconfirmed PaymentIntent when a rider backs out of the payment sheet.
+ * Clears payment_intent_id so the driver does not see a false "payment held" state.
+ */
+export const cancelPaymentIntent = async (
+  bookingId: string,
+  riderId: string
+): Promise<void> => {
+  const intentResult = await pool.query(
+    'SELECT payment_intent_id, rider_id FROM bookings WHERE booking_id = $1',
+    [bookingId]
+  );
+  const row = intentResult.rows[0];
+  if (!row) throw new AppError('Booking not found', 404);
+  if (row.rider_id !== riderId) throw new AppError('Unauthorized', 403);
+
+  const intentId: string | null = row.payment_intent_id;
+  if (intentId) {
+    try {
+      const intent = await stripe.paymentIntents.retrieve(intentId);
+      const cancellable = ['requires_payment_method', 'requires_confirmation', 'requires_action'];
+      if (cancellable.includes(intent.status)) {
+        await stripe.paymentIntents.cancel(intentId);
+      }
+    } catch (err: any) {
+      console.warn(`[CANCEL_INTENT] Stripe cancel skipped for ${intentId}: ${err?.message}`);
+    }
+  }
+
+  await pool.query(
+    `UPDATE bookings
+     SET payment_intent_id = NULL, payment_authorized_at = NULL, updated_at = current_timestamp
+     WHERE booking_id = $1`,
+    [bookingId]
+  );
 };
 
 /**
@@ -1280,6 +1322,7 @@ export default {
   authorizePayment,
   confirmPayment,
   capturePayment,
+  cancelPaymentIntent,
   writeFinalPrice,
   confirmRiderPickup,
 };

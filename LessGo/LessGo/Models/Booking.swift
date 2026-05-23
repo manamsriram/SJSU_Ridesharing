@@ -326,6 +326,7 @@ struct BookingWithRider: Codable, Identifiable {
     let fare: Double?
     let paymentIntentId: String?
     let paymentDeadlineAt: Date?
+    let paymentConfirmedAt: Date?
     let cancellationReason: String?
     let riderPickupConfirmedAt: Date?
 
@@ -341,6 +342,7 @@ struct BookingWithRider: Codable, Identifiable {
         holdExpiresAt: Date?, scostBreakdown: ScostBreakdown?,
         fare: Double?, paymentIntentId: String?,
         paymentDeadlineAt: Date? = nil,
+        paymentConfirmedAt: Date? = nil,
         cancellationReason: String? = nil,
         riderPickupConfirmedAt: Date? = nil
     ) {
@@ -353,6 +355,7 @@ struct BookingWithRider: Codable, Identifiable {
         self.holdExpiresAt = holdExpiresAt; self.scostBreakdown = scostBreakdown
         self.fare = fare; self.paymentIntentId = paymentIntentId
         self.paymentDeadlineAt = paymentDeadlineAt
+        self.paymentConfirmedAt = paymentConfirmedAt
         self.cancellationReason = cancellationReason
         self.riderPickupConfirmedAt = riderPickupConfirmedAt
     }
@@ -368,6 +371,7 @@ struct BookingWithRider: Codable, Identifiable {
             holdExpiresAt: holdExpiresAt, scostBreakdown: scostBreakdown,
             fare: fare, paymentIntentId: paymentIntentId,
             paymentDeadlineAt: paymentDeadlineAt,
+            paymentConfirmedAt: paymentConfirmedAt,
             cancellationReason: cancellationReason,
             riderPickupConfirmedAt: riderPickupConfirmedAt
         )
@@ -392,6 +396,7 @@ struct BookingWithRider: Codable, Identifiable {
         case fare
         case paymentIntentId = "payment_intent_id"
         case paymentDeadlineAt = "payment_deadline_at"
+        case paymentConfirmedAt = "payment_confirmed_at"
         case cancellationReason = "cancellation_reason"
         case riderPickupConfirmedAt = "rider_pickup_confirmed_at"
     }
@@ -414,6 +419,7 @@ struct BookingWithRider: Codable, Identifiable {
         scostBreakdown = try container.decodeIfPresent(ScostBreakdown.self, forKey: .scostBreakdown)
         paymentIntentId = try container.decodeIfPresent(String.self, forKey: .paymentIntentId)
         paymentDeadlineAt = try container.decodeIfPresent(Date.self, forKey: .paymentDeadlineAt)
+        paymentConfirmedAt = try container.decodeIfPresent(Date.self, forKey: .paymentConfirmedAt)
         cancellationReason = try container.decodeIfPresent(String.self, forKey: .cancellationReason)
         riderPickupConfirmedAt = try container.decodeIfPresent(Date.self, forKey: .riderPickupConfirmedAt)
         if let fareDouble = try? container.decode(Double.self, forKey: .fare) {

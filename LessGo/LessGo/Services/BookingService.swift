@@ -171,6 +171,14 @@ class BookingService {
         )
     }
 
+    func cancelPaymentIntent(bookingId: String) async throws {
+        struct EmptyResponse: Codable { let status: String }
+        let _: EmptyResponse = try await network.request(
+            endpoint: "/bookings/\(bookingId)/payment-intent",
+            method: .delete
+        )
+    }
+
     // MARK: - Get Booking for Trip
 
     func getBookingForTrip(tripId: String) async throws -> Booking? {

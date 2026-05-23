@@ -127,10 +127,16 @@ class BookingViewModel: ObservableObject {
         let cutoff = Date().addingTimeInterval(-24 * 3600)
         var seen = Set<String>()
         var groups: [(trip: Trip, bookings: [Booking])] = []
+        let expiredCutoff = Date().addingTimeInterval(-2 * 3600)
         for booking in bookings {
             guard let trip = booking.trip else { continue }
             // Hide completed/cancelled trips older than 24h
             if (trip.status == .completed || trip.status == .cancelled) && trip.updatedAt < cutoff {
+                continue
+            }
+            // Hide pending trips whose departure was more than 2 hours ago — the server
+            // pg_cron job will cancel these; don't show them as active on the client.
+            if trip.status == .pending && trip.departureTime < expiredCutoff {
                 continue
             }
             if seen.contains(trip.id) {
@@ -225,7 +231,7 @@ class BookingViewModel: ObservableObject {
             isLoading = false
 
         case .canceled:
-            break
+            Task { try? await bookingService.cancelPaymentIntent(bookingId: bookingId) }
 
         case .failed(let error):
             errorMessage = "Payment failed: \(error.localizedDescription)"

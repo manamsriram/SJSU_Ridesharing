@@ -1237,6 +1237,41 @@ export const processDeadlineCancellations = async (): Promise<{ processed: numbe
   return { processed: result.rows.length };
 };
 
+/**
+ * Cancel Stripe PaymentIntents for bookings that were auto-cancelled because the trip
+ * expired without the driver starting it (cancellation_reason = 'trip_expired').
+ * pg_cron cannot call Stripe directly, so this endpoint handles the Stripe side.
+ */
+export const releaseExpiredHolds = async (): Promise<{ released: number }> => {
+  const result = await pool.query<{ booking_id: string; payment_intent_id: string }>(
+    `SELECT booking_id, payment_intent_id
+     FROM bookings
+     WHERE booking_state = 'cancelled'
+       AND cancellation_reason = 'trip_expired'
+       AND payment_intent_id IS NOT NULL
+       AND deleted_at IS NULL`
+  );
+
+  let released = 0;
+  for (const row of result.rows) {
+    try {
+      await axios.post(
+        `${config.paymentServiceUrl}/payments/trip/${row.booking_id}/cancel-intents`
+      ).catch(() => {});
+      // Clear the intent ID so we don't retry this booking
+      await pool.query(
+        `UPDATE bookings SET payment_intent_id = NULL, updated_at = NOW() WHERE booking_id = $1`,
+        [row.booking_id]
+      );
+      released++;
+    } catch (err) {
+      console.error(`[releaseExpiredHolds] Failed for booking ${row.booking_id}:`, err);
+    }
+  }
+
+  return { released };
+};
+
 export default {
   updateTripLocation,
   getTripLocation,
@@ -1255,4 +1290,5 @@ export default {
   isLocationNearSJSU,
   removeRiderFromRoute,
   processDeadlineCancellations,
+  releaseExpiredHolds,
 };

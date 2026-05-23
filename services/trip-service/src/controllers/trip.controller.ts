@@ -943,6 +943,16 @@ export const processDeadlineCancellations = async (_req: AuthRequest, res: Respo
 };
 
 /**
+ * POST /trips/release-expired-holds
+ * Cancel Stripe PaymentIntents for bookings auto-cancelled due to trip expiry.
+ * Call periodically (e.g. on service startup or via external scheduler).
+ */
+export const releaseExpiredHolds = async (_req: AuthRequest, res: Response): Promise<void> => {
+  const result = await tripService.releaseExpiredHolds();
+  res.json({ status: 'success', message: `Released ${result.released} expired payment hold(s)`, data: result });
+};
+
+/**
  * POST /trips/:id/settle
  * Admin: manually re-trigger settlement for a completed trip.
  */
