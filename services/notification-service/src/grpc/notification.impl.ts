@@ -1,42 +1,7 @@
 import * as grpc from '@grpc/grpc-js';
 import type { NotificationServiceServer } from '../../../../shared/generated/notification';
 import * as emailService from '../services/email.service';
-
-// ─── In-app notification store (mirrors app.ts) ──────────────────────────────
-// The store lives in app.ts; since gRPC calls come in on a separate server
-// we delegate to the same in-memory helpers by re-exporting them from app.ts.
-// To avoid a circular dependency we replicate the minimal push logic here and
-// keep the two stores independent (the existing HTTP endpoints are unaffected).
-
-type InAppNotification = {
-  id: string;
-  user_id: string;
-  type: string;
-  title: string;
-  message: string;
-  data?: Record<string, string>;
-  created_at: string;
-  read_at: string | null;
-};
-
-const notificationStore = new Map<string, InAppNotification[]>();
-
-function createNotification(
-  input: Omit<InAppNotification, 'id' | 'created_at' | 'read_at'>,
-): InAppNotification {
-  return {
-    id: `notif_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`,
-    created_at: new Date().toISOString(),
-    read_at: null,
-    ...input,
-  };
-}
-
-function pushNotification(notification: InAppNotification): void {
-  const current = notificationStore.get(notification.user_id) ?? [];
-  current.unshift(notification);
-  notificationStore.set(notification.user_id, current.slice(0, 200));
-}
+import { createNotification, pushNotification } from '../store/notifications.store';
 
 // ─── gRPC implementation ─────────────────────────────────────────────────────
 
