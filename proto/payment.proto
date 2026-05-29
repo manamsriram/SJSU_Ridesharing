@@ -1,0 +1,54 @@
+syntax = "proto3";
+package lessgo.payment;
+
+message CreatePaymentIntentRequest {
+  string booking_id = 1;
+  double amount = 2;
+}
+
+message CreatePaymentIntentResponse {
+  string payment_id = 1;
+  string client_secret = 2;
+}
+
+message CapturePaymentRequest {
+  string payment_id = 1;
+  double amount = 2;
+}
+
+message CapturePaymentResponse {
+  bool success = 1;
+}
+
+message CancelPaymentRequest {
+  string payment_id = 1;
+}
+
+message CancelPaymentResponse {
+  bool success = 1;
+}
+
+message RefundPaymentRequest {
+  string payment_id = 1;
+}
+
+message RefundPaymentResponse {
+  bool success = 1;
+}
+
+message CancelTripIntentsRequest {
+  string trip_id = 1;
+}
+
+message CancelTripIntentsResponse {
+  bool success = 1;
+  int32 cancelled_count = 2;
+}
+
+service PaymentService {
+  rpc CreatePaymentIntent(CreatePaymentIntentRequest) returns (CreatePaymentIntentResponse);
+  rpc CapturePayment(CapturePaymentRequest) returns (CapturePaymentResponse);
+  rpc CancelPayment(CancelPaymentRequest) returns (CancelPaymentResponse);
+  rpc RefundPayment(RefundPaymentRequest) returns (RefundPaymentResponse);
+  rpc CancelTripIntents(CancelTripIntentsRequest) returns (CancelTripIntentsResponse);
+}

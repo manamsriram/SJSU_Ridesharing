@@ -1,0 +1,18 @@
+syntax = "proto3";
+package lessgo.user;
+
+message GetUserRequest {
+  string user_id = 1;
+}
+
+message UserResponse {
+  string user_id = 1;
+  string email = 2;
+  string name = 3;
+  string role = 4;
+  string sjsu_id_status = 5;
+}
+
+service UserService {
+  rpc GetUser(GetUserRequest) returns (UserResponse);
+}

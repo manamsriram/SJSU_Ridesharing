@@ -1,0 +1,61 @@
+syntax = "proto3";
+package lessgo.booking;
+import "common.proto";
+
+message GetBookingsForSettlementRequest {
+  string trip_id = 1;
+}
+
+message BookingSettleItem {
+  string booking_id = 1;
+  string rider_id = 2;
+  string payment_id = 3;
+  double amount = 4;
+}
+
+message GetBookingsForSettlementResponse {
+  repeated BookingSettleItem bookings = 1;
+}
+
+message UpdateFinalPriceRequest {
+  string booking_id = 1;
+  double final_price = 2;
+}
+
+message UpdateFinalPriceResponse {
+  bool success = 1;
+}
+
+message CreateInternalBookingRequest {
+  string trip_id = 1;
+  string rider_id = 2;
+  int32 seats_booked = 3;
+  string scost_breakdown_json = 4;
+  lessgo.common.GeoPoint pickup_location = 5;
+}
+
+message CreateInternalBookingResponse {
+  string booking_id = 1;
+}
+
+message GetTripBookingsRequest {
+  string trip_id = 1;
+}
+
+message BookingItem {
+  string booking_id = 1;
+  string rider_id = 2;
+  string status = 3;
+  int32 seats_booked = 4;
+}
+
+message GetTripBookingsResponse {
+  repeated BookingItem bookings = 1;
+}
+
+service BookingService {
+  rpc GetBookingsForSettlement(GetBookingsForSettlementRequest) returns (GetBookingsForSettlementResponse);
+  rpc UpdateFinalPrice(UpdateFinalPriceRequest) returns (UpdateFinalPriceResponse);
+  rpc CreateInternalBooking(CreateInternalBookingRequest) returns (CreateInternalBookingResponse);
+  rpc GetTripBookings(GetTripBookingsRequest) returns (GetTripBookingsResponse);
+}
