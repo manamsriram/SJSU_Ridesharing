@@ -29,3 +29,6 @@ export {
 // Database
 export { query, getClient, transaction, closePool } from './database/connection';
 export { default as pool } from './database/connection';
+
+// gRPC client factories
+export * from './grpc/clients';
