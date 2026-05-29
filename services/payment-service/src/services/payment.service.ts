@@ -13,7 +13,7 @@ const stripe = new Stripe(config.stripeSecretKey!);
 export const createPaymentIntent = async (
   bookingId: string,
   amount: number
-): Promise<Payment> => {
+): Promise<Payment & { client_secret: string | null }> => {
   // Check if payment already exists for booking
   const existing = await pool.query('SELECT * FROM payments WHERE booking_id = $1', [bookingId]);
   if (existing.rows.length > 0) {
@@ -49,7 +49,7 @@ export const createPaymentIntent = async (
 
   console.log(`[PAYMENT] Payment record created: payment_id=${result.rows[0].payment_id}`);
 
-  return result.rows[0];
+  return { ...result.rows[0], client_secret: paymentIntent.client_secret };
 };
 
 /**

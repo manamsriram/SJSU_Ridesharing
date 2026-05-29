@@ -17,7 +17,7 @@ export const paymentImpl: PaymentServiceServer = {
       );
       callback(null, {
         paymentId: payment.payment_id,
-        clientSecret: payment.stripe_payment_intent_id,
+        clientSecret: payment.client_secret ?? '',
       });
     } catch (err) {
       callback({ code: grpc.status.INTERNAL, message: String(err) });
