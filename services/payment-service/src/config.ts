@@ -5,6 +5,7 @@ dotenv.config();
 
 export const config = {
   port: process.env.PAYMENT_SERVICE_PORT || 3005,
+  grpcPort: parseInt(process.env.GRPC_PORT ?? '4005', 10),
   env: process.env.NODE_ENV || 'development',
   databaseUrl: getSecretValue('DATABASE_URL'),
   stripeSecretKey: getSecretValue('STRIPE_SECRET_KEY'),
