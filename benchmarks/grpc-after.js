@@ -16,9 +16,18 @@ export const options = {
   },
   thresholds: {
     http_req_duration: ['p(95)<2000'],
-    errors: ['rate<0.1'],
+    errors: ['rate<0.01'],
   },
 };
+
+export function setup() {
+  if (!__ENV.AUTH_TOKEN) {
+    throw new Error('AUTH_TOKEN environment variable is required');
+  }
+  if (!__ENV.TEST_TRIP_ID) {
+    throw new Error('TEST_TRIP_ID environment variable is required');
+  }
+}
 
 const BASE_URL = __ENV.BASE_URL || 'http://136.109.119.177';
 const AUTH_TOKEN = __ENV.AUTH_TOKEN;
@@ -38,6 +47,10 @@ export default function () {
 
   const ok = check(res, {
     'status 2xx': (r) => r.status >= 200 && r.status < 300,
+    'has booking id': (r) => {
+      try { return r.json('data.id') !== undefined || r.json('id') !== undefined; }
+      catch { return false; }
+    },
   });
   errorRate.add(!ok);
   bookingLatency.add(res.timings.duration);
