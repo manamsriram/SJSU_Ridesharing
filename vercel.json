@@ -1,12 +1,1 @@
-{
-  "rewrites": [
-    {
-      "source": "/api",
-      "destination": "$API_GATEWAY_URL/api"
-    },
-    {
-      "source": "/api/(.*)",
-      "destination": "$API_GATEWAY_URL/api/$1"
-    }
-  ]
-}
+{}
