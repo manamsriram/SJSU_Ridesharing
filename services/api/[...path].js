@@ -1,40 +1,49 @@
-// Vercel serverless proxy — forwards /api/* to API_GATEWAY_URL/api/*
-// vercel.json rewrites don't support $ENV_VAR substitution, so we use a function.
-export default async function handler(req, res) {
+const http = require('http');
+const https = require('https');
+
+module.exports = async function handler(req, res) {
   const gatewayUrl = process.env.API_GATEWAY_URL;
 
   if (!gatewayUrl) {
-    return res.status(503).json({ status: 'error', message: 'Gateway not configured' });
+    res.status(503).json({ status: 'error', message: 'Gateway not configured' });
+    return;
   }
 
-  const upstreamUrl = `${gatewayUrl}${req.url}`;
+  const target = new URL(req.url, gatewayUrl);
+  const isHttps = target.protocol === 'https:';
+  const transport = isHttps ? https : http;
 
-  const headers = { ...req.headers };
-  delete headers['host'];
-
-  let body;
-  if (req.method !== 'GET' && req.method !== 'HEAD') {
-    body = await new Promise((resolve, reject) => {
-      const chunks = [];
-      req.on('data', (chunk) => chunks.push(chunk));
-      req.on('end', () => resolve(Buffer.concat(chunks)));
-      req.on('error', reject);
-    });
+  const chunks = [];
+  for await (const chunk of req) {
+    chunks.push(chunk);
   }
+  const body = Buffer.concat(chunks);
 
-  const upstream = await fetch(upstreamUrl, {
+  const options = {
+    hostname: target.hostname,
+    port: target.port || (isHttps ? 443 : 80),
+    path: target.pathname + target.search,
     method: req.method,
-    headers,
-    body: body?.length ? body : undefined,
+    headers: {
+      ...req.headers,
+      host: target.hostname,
+      'content-length': body.length,
+    },
+  };
+
+  await new Promise((resolve, reject) => {
+    const proxy = transport.request(options, (upstream) => {
+      res.status(upstream.statusCode);
+      Object.entries(upstream.headers).forEach(([k, v]) => {
+        if (!['transfer-encoding', 'connection'].includes(k.toLowerCase())) {
+          res.setHeader(k, v);
+        }
+      });
+      upstream.pipe(res);
+      upstream.on('end', resolve);
+    });
+    proxy.on('error', reject);
+    if (body.length) proxy.write(body);
+    proxy.end();
   });
-
-  const responseBody = await upstream.arrayBuffer();
-
-  upstream.headers.forEach((value, key) => {
-    if (!['transfer-encoding', 'connection'].includes(key.toLowerCase())) {
-      res.setHeader(key, value);
-    }
-  });
-
-  res.status(upstream.status).send(Buffer.from(responseBody));
-}
+};
