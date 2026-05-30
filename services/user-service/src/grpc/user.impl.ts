@@ -1,5 +1,5 @@
 import * as grpc from '@grpc/grpc-js';
-import type { UserServiceServer, GetUserRequest, UserResponse } from '../../../../../shared/generated/user';
+import type { UserServiceServer, GetUserRequest, UserResponse } from '../generated/user';
 import { getUserById } from '../services/user.service';
 
 export const userImpl: UserServiceServer = {

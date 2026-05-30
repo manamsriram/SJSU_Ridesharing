@@ -1,5 +1,5 @@
 import * as grpc from '@grpc/grpc-js';
-import { BookingServiceService } from '../../../shared/generated/booking';
+import { BookingServiceService } from './generated/booking';
 import { bookingImpl } from './grpc/booking.impl';
 
 export function startGrpcServer(port: number): grpc.Server {

@@ -1,5 +1,5 @@
 import * as grpc from '@grpc/grpc-js';
-import type { TripServiceServer } from '../../../../shared/generated/trip';
+import type { TripServiceServer } from '../generated/trip';
 import { getTripById } from '../services/trip.service';
 
 export const tripImpl: TripServiceServer = {

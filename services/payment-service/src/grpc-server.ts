@@ -1,5 +1,5 @@
 import * as grpc from '@grpc/grpc-js';
-import { PaymentServiceService } from '../../../shared/generated/payment';
+import { PaymentServiceService } from './generated/payment';
 import { paymentImpl } from './grpc/payment.impl';
 
 export function startGrpcServer(port: number): grpc.Server {

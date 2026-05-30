@@ -1,5 +1,5 @@
 import * as grpc from '@grpc/grpc-js';
-import { NotificationServiceService } from '../../../shared/generated/notification';
+import { NotificationServiceService } from './generated/notification';
 import { notificationImpl } from './grpc/notification.impl';
 
 export function startGrpcServer(port: number): grpc.Server {

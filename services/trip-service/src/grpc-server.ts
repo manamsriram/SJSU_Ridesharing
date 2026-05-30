@@ -1,5 +1,5 @@
 import * as grpc from '@grpc/grpc-js';
-import { TripServiceService } from '../../../shared/generated/trip';
+import { TripServiceService } from './generated/trip';
 import { tripImpl } from './grpc/trip.impl';
 
 export function startGrpcServer(port: number): grpc.Server {

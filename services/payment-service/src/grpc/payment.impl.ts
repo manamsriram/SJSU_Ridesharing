@@ -1,5 +1,5 @@
 import * as grpc from '@grpc/grpc-js';
-import type { PaymentServiceServer } from '../../../../shared/generated/payment';
+import type { PaymentServiceServer } from '../generated/payment';
 import {
   createPaymentIntent,
   capturePayment,

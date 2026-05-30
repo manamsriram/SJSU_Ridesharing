@@ -1,5 +1,5 @@
 import * as grpc from '@grpc/grpc-js';
-import { CostServiceService } from '../../../shared/generated/cost';
+import { CostServiceService } from './generated/cost';
 import { costImpl } from './grpc/cost.impl';
 
 export function startGrpcServer(port: number): grpc.Server {

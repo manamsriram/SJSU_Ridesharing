@@ -1,5 +1,5 @@
 import * as grpc from '@grpc/grpc-js';
-import type { NotificationServiceServer } from '../../../../shared/generated/notification';
+import type { NotificationServiceServer } from '../generated/notification';
 import * as emailService from '../services/email.service';
 import { createNotification, pushNotification } from '../store/notifications.store';
 

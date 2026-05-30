@@ -1,5 +1,5 @@
 import * as grpc from '@grpc/grpc-js';
-import type { BookingServiceServer } from '../../../../shared/generated/booking';
+import type { BookingServiceServer } from '../generated/booking';
 import {
   getBookingsByTripId,
   writeFinalPrice,

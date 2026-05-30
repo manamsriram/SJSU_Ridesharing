@@ -1,5 +1,5 @@
 import * as grpc from '@grpc/grpc-js';
-import type { CostServiceServer } from '../../../../shared/generated/cost';
+import type { CostServiceServer } from '../generated/cost';
 import { calculateCost, settleTrip } from '../cost.service';
 
 export const costImpl: CostServiceServer = {
