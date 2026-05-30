@@ -127,7 +127,7 @@ router.post(
 
 router.post(
   '/release-expired-holds',
-  (req: Request, res: Response, next: NextFunction) => {
+  (req: express.Request, res: express.Response, next: express.NextFunction) => {
     if (req.headers['x-internal-service'] !== 'true') {
       return res.status(403).json({ status: 'error', message: 'Forbidden' });
     }
