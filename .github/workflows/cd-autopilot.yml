@@ -4,7 +4,7 @@ on:
   workflow_run:
     workflows: ["CI - Unit Tests"]
     types: [completed]
-    branches: [main,jto]
+    branches: [main,jto,benchmark/http,benchmark/grpc]
   workflow_dispatch:
 
 permissions:
