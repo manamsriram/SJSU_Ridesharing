@@ -1,5 +1,6 @@
-import express, { Application } from 'express';
+import express, { Application, NextFunction, Request, Response } from 'express';
 import cors from 'cors';
+import { AppError, errorHandler } from '@lessgo/shared';
 import { calculateCost, settleTrip } from './cost.service';
 
 const app: Application = express();
@@ -33,19 +34,20 @@ app.post('/cost/calculate', async (req, res) => {
 });
 
 // ── GET /cost/settle/:trip_id ─────────────────────────────────────────────────
-app.get('/cost/settle/:trip_id', async (req, res) => {
+app.get('/cost/settle/:trip_id', async (req: Request, res: Response, next: NextFunction) => {
   const { trip_id } = req.params;
   try {
     const result = await settleTrip(trip_id);
     res.json({ status: 'success', message: 'Settlement calculated successfully (IRS mileage rate)', data: result });
   } catch (error: any) {
     if (error?.status === 404 || error?.response?.status === 404) {
-      res.status(404).json({ status: 'error', message: error.message ?? `Trip ${trip_id} not found` });
-      return;
+      return next(new AppError(error.message ?? `Trip ${trip_id} not found`, 404));
     }
     console.error(`[settle] Error for trip ${trip_id}:`, error?.message ?? error);
     res.status(500).json({ status: 'error', message: `Failed to calculate trip settlement: ${error?.message ?? 'Unknown error'}` });
   }
 });
+
+app.use(errorHandler);
 
 export default app;
