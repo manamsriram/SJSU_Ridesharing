@@ -39,8 +39,8 @@ app.get('/cost/settle/:trip_id', async (req, res) => {
     const result = await settleTrip(trip_id);
     res.json({ status: 'success', message: 'Settlement calculated successfully (IRS mileage rate)', data: result });
   } catch (error: any) {
-    if (error?.status === 404) {
-      res.status(404).json({ status: 'error', message: error.message });
+    if (error?.status === 404 || error?.response?.status === 404) {
+      res.status(404).json({ status: 'error', message: error.message ?? `Trip ${trip_id} not found` });
       return;
     }
     console.error(`[settle] Error for trip ${trip_id}:`, error?.message ?? error);
