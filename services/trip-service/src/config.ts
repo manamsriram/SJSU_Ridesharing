@@ -5,6 +5,7 @@ dotenv.config();
 
 export const config = {
   port: process.env.TRIP_SERVICE_PORT || 3003,
+  grpcPort: parseInt(process.env.GRPC_PORT ?? '4003', 10),
   env: process.env.NODE_ENV || 'development',
 
   // Database
