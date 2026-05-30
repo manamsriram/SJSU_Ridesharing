@@ -26,21 +26,46 @@
 ### gRPC After (`benchmark/grpc` branch)
 | Metric | p50 | p90 | p95 | max |
 |---|---|---|---|---|
-| trip_search_latency_grpc | TBD | TBD | TBD | TBD |
-| http_req_duration | TBD | TBD | TBD | TBD |
-| error_rate | TBD | — | — | — |
+| trip_search_latency_grpc | 139 ms | 582 ms | 832 ms | 2933 ms |
+| http_req_duration | 139 ms | 582 ms | 832 ms | 2933 ms |
+| error_rate | 0.05% | — | — | — |
+
+- 1729 iterations, 21.5 req/s, 1 error (connection reset)
+
+## Summary
+
+| Metric | HTTP | gRPC | Delta |
+|---|---|---|---|
+| p50 | 115 ms | 139 ms | **+21%** |
+| p90 | 192 ms | 582 ms | **+203%** |
+| p95 | 284 ms | 832 ms | **+193%** |
+| max | 1258 ms | 2933 ms | **+133%** |
+| throughput | 25.6 req/s | 21.5 req/s | **-16%** |
+| errors | 0.00% | 0.05% | — |
+
+**Result: gRPC is slower for this endpoint.** The trip search path calls the embedding service for
+ML-based ranking, which dominates latency (~200-500ms per call). Transport-layer savings from gRPC
+(sub-millisecond) are invisible against that bottleneck. The gRPC benefit would be measurable on
+lightweight, high-frequency inter-service calls (e.g. auth token validation, cost calculation)
+where no ML inference is involved.
 
 ## Analysis
 
-### Why gRPC is faster at high concurrency
+### Why gRPC was expected to be faster
 - HTTP/1.1 (axios default): one TCP connection per request, head-of-line blocking
 - gRPC (HTTP/2): single multiplexed connection per service pair, binary protobuf framing
 - Per-request overhead drops from ~TCP handshake + HTTP headers (~1-3ms) to framing only (~0.1ms)
-- Biggest wins: settlement path (6 sequential/parallel calls) and booking creation (3 blocking calls)
+
+### Why it wasn't faster here
+- Trip search calls `embedding-service` for ML ranking on every request
+- Embedding inference takes 200-500ms and saturates the embedding pod under load
+- At 20 VUs the embedding service queues requests, driving p90/p95 up regardless of transport
+- gRPC adds slight serialization overhead (proto marshal/unmarshal) that isn't offset when the
+  bottleneck is compute, not network
 
 ### Note on axios keep-alive
 The HTTP baseline did not have `keepAlive: true` configured in axios (`httpAgent`).
-Enabling keep-alive in HTTP/1.1 would recover some of the TCP overhead, but not HTTP/2 multiplexing.
+Enabling keep-alive in HTTP/1.1 would recover some TCP overhead, but not HTTP/2 multiplexing.
 
 ### Connection handling
 gRPC clients are initialized once at service startup and reuse the connection pool.
