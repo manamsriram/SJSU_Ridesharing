@@ -1,7 +1,7 @@
 import dotenv from 'dotenv';
 import { getSecretValue } from '@lessgo/shared';
 
-dotenv.config();
+if (process.env.NODE_ENV !== 'test') dotenv.config();
 
 export const config = {
   port: process.env.USER_SERVICE_PORT || 3002,

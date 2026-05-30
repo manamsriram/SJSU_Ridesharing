@@ -1,7 +1,7 @@
 import dotenv from 'dotenv';
 import { getSecretValue } from '@lessgo/shared';
 
-dotenv.config();
+if (process.env.NODE_ENV !== 'test') dotenv.config();
 
 const requireSecret = (key: string): string => {
   const value = getSecretValue(key);

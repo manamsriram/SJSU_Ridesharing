@@ -2,7 +2,7 @@ import { Pool, PoolClient, QueryResult } from 'pg';
 import dotenv from 'dotenv';
 import { getSecretValue } from '../utils/secrets';
 
-dotenv.config();
+if (process.env.NODE_ENV !== 'test') dotenv.config();
 
 const pool = new Pool({
   connectionString: getSecretValue('DATABASE_URL'),
