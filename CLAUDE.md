@@ -31,7 +31,13 @@ The project has a memory system at `memory/` that stores important context. When
 - **Migration Process:** `npm run bootstrap:db`
 - **Latest Migration:** `020_enhance_trip_booking_flow.sql` (Phase 1)
 
-### Backend Services
+### Deployment
+- **Platform:** Google Kubernetes Engine (GKE Autopilot cluster)
+- **Only exposed endpoint:** API Gateway — URL stored in `API_GATEWAY_URL` env var (never hardcoded)
+- All services communicate internally within the cluster; none are directly reachable from outside
+- Use the gateway URL for any manual API testing or curl commands
+
+### Backend Services (internal ports, cluster-only)
 - **API Gateway:** Port 3000
 - **Auth Service:** Port 3001
 - **User Service:** Port 3002
@@ -95,7 +101,7 @@ When starting a new session on this project:
 - **Chat:** Already implemented, reuse for rider-driver communication
 - **SJSU Requirement:** All trips must connect to SJSU campus
 - **On-Demand Matching:** Still exists for backward compatibility, being deprecated
-- **Backend Services:** Are all hosted  and managed by Google Kubernetes Engine, using an auto-pilot cluster
+- **Backend Services:** Hosted on GKE Autopilot. Only the API Gateway is externally reachable (URL in `API_GATEWAY_URL` env var). Never hardcode the gateway IP or reference localhost service URLs for production testing.
 
 ## Recent Changes (Phase 1)
 

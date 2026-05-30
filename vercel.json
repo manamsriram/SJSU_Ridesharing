@@ -2,11 +2,11 @@
   "rewrites": [
     {
       "source": "/api",
-      "destination": "http://136.109.119.177:80/api"
+      "destination": "$API_GATEWAY_URL/api"
     },
     {
       "source": "/api/(.*)",
-      "destination": "http://136.109.119.177:80/api/$1"
+      "destination": "$API_GATEWAY_URL/api/$1"
     }
   ]
 }

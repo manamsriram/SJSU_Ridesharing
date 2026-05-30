@@ -2,7 +2,7 @@
 
 ## Environment
 - GKE Autopilot cluster: lessgo-492322, namespace: lessgo
-- API Gateway LoadBalancer: http://136.109.119.177/
+- API Gateway LoadBalancer: $API_GATEWAY_URL (set via environment variable)
 - k6 run location: external client → GKE LoadBalancer → api-gateway → internal services
 - k6 version: (fill in after running)
 - Date: (fill in)
@@ -44,13 +44,13 @@ No per-request TCP overhead after the first request to a target service.
 
 ### Baseline (run BEFORE migration, or from a git stash of pre-migration code)
 ```bash
-AUTH_TOKEN=<rider_jwt> TEST_TRIP_ID=<uuid> BASE_URL=http://136.109.119.177 \
+AUTH_TOKEN=<rider_jwt> TEST_TRIP_ID=<uuid> BASE_URL=$API_GATEWAY_URL \
   k6 run benchmarks/http-baseline.js --out json=benchmarks/results/http-baseline.json
 ```
 
 ### After gRPC migration (run after deploying migrated services to GKE)
 ```bash
-AUTH_TOKEN=<rider_jwt> TEST_TRIP_ID=<uuid> BASE_URL=http://136.109.119.177 \
+AUTH_TOKEN=<rider_jwt> TEST_TRIP_ID=<uuid> BASE_URL=$API_GATEWAY_URL \
   k6 run benchmarks/grpc-after.js --out json=benchmarks/results/grpc-after.json
 ```
 

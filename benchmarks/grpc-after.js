@@ -29,7 +29,7 @@ export function setup() {
   }
 }
 
-const BASE_URL = __ENV.BASE_URL || 'http://136.109.119.177';
+const BASE_URL = __ENV.BASE_URL || 'http://localhost:3000';
 const AUTH_TOKEN = __ENV.AUTH_TOKEN;
 const TEST_TRIP_ID = __ENV.TEST_TRIP_ID;
 

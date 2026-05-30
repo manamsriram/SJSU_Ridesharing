@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Lightweight deployment smoke test for API Gateway routing.
 # Usage:
-#   GATEWAY_URL=http://136.109.119.177 bash tests/test-gateway-smoke.sh
+#   GATEWAY_URL=http://<gateway-ip> bash tests/test-gateway-smoke.sh
 #   bash tests/test-gateway-smoke.sh http://localhost:3000
 
 set -euo pipefail
