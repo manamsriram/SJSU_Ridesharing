@@ -86,7 +86,4 @@ LessGo/LessGo.xcodeproj/xcuserdata/sriram.xcuserdatad/xcschemes/xcschememanageme
 graphify-out
 docs/DYNAMIC_PRICING_PLAN.md
 
-# gRPC generated stubs (regenerate with npm run proto:generate)
-shared/generated/
-services/routing-service/src/generated/
-services/embedding-service/src/generated/
+# gRPC generated stubs are committed to repo to support Docker/CI builds
