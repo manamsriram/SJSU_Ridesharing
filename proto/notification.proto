@@ -1,0 +1,36 @@
+syntax = "proto3";
+package lessgo.notification;
+
+message NotificationData {
+  map<string, string> fields = 1;
+}
+
+message SendNotificationRequest {
+  string user_id = 1;
+  string type = 2;
+  string title = 3;
+  string message = 4;
+  NotificationData data = 5;
+}
+
+message SendNotificationResponse {
+  bool success = 1;
+}
+
+message AdminAlertRequest {
+  string message = 1;
+  string level = 2;
+}
+
+message DriverRequestRequest {
+  string driver_id = 1;
+  string trip_id = 2;
+  string rider_name = 3;
+  string pickup_address = 4;
+}
+
+service NotificationService {
+  rpc SendNotification(SendNotificationRequest) returns (SendNotificationResponse);
+  rpc SendAdminAlert(AdminAlertRequest) returns (SendNotificationResponse);
+  rpc SendDriverRequest(DriverRequestRequest) returns (SendNotificationResponse);
+}

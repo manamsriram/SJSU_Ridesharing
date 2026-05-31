@@ -11,7 +11,7 @@ Install k6: https://k6.io/docs/get-started/installation/
 brew install k6
 ```
 
-All services must be running. The API Gateway is exposed at `http://136.109.119.177:80` (default). All other services communicate internally and are not directly reachable.
+All services must be running. Set `BASE_URL` to the API Gateway URL (e.g. `export BASE_URL=http://localhost:3000` for local dev). All other services communicate internally and are not directly reachable.
 
 ## Scenarios
 
@@ -34,7 +34,7 @@ All services must be running. The API Gateway is exposed at `http://136.109.119.
 ## Running
 
 ```bash
-# Individual scenarios (targets 136.109.119.177:80 by default)
+# Individual scenarios (targets BASE_URL, defaults to localhost:3000)
 npm run test:load:commute
 npm run test:load:trips
 npm run test:load:payments

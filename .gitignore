@@ -85,3 +85,5 @@ LessGo/LessGo.xcodeproj/xcuserdata/sriram.xcuserdatad/xcschemes/xcschememanageme
 .worktrees/
 graphify-out
 docs/DYNAMIC_PRICING_PLAN.md
+
+# gRPC generated stubs are committed to repo to support Docker/CI builds

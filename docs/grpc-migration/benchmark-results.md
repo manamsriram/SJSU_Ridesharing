@@ -2,7 +2,7 @@
 
 ## Environment
 - GKE Autopilot cluster: lessgo-492322, namespace: lessgo
-- API Gateway LoadBalancer: http://136.109.119.177/
+- API Gateway LoadBalancer: $API_GATEWAY_URL (set via environment variable)
 - k6 run location: external client → GKE LoadBalancer → api-gateway → internal services
 - k6 version: v0.57.0
 - Date: 2026-05-30
@@ -95,13 +95,13 @@ kubectl get configmap lessgo-config -n lessgo -o jsonpath='{.data.RATE_LIMIT_MAX
 
 ### Baseline (on `benchmark/http` branch)
 ```bash
-BASE_URL=http://136.109.119.177 \
+BASE_URL=$API_GATEWAY_URL \
   k6 run benchmarks/http-baseline.js --out json=benchmarks/results/http-baseline.json
 ```
 
 ### After gRPC migration (on `benchmark/grpc` branch)
 ```bash
-BASE_URL=http://136.109.119.177 \
+BASE_URL=$API_GATEWAY_URL \
   k6 run benchmarks/grpc-after.js --out json=benchmarks/results/grpc-after.json
 ```
 

@@ -1,4 +1,4 @@
-import express from 'express';
+import express, { type Request, type Response, type NextFunction } from 'express';
 import * as tripController from '../controllers/trip.controller';
 import * as matchingController from '../controllers/matching.controller';
 import { authenticateToken, requireDriver, requireVerifiedStudent, asyncHandler } from '@lessgo/shared';

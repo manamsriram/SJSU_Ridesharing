@@ -28,7 +28,9 @@
     "multer": "^1.4.5-lts.2",
     "pg": "^8.11.3",
     "stripe": "^14.25.0",
-    "uuid": "^9.0.1"
+    "uuid": "^9.0.1",
+    "@grpc/grpc-js": "^1.14.4",
+    "@bufbuild/protobuf": "^2.0.0"
   },
   "devDependencies": {
     "@types/cors": "^2.8.17",

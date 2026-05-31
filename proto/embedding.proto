@@ -1,0 +1,15 @@
+syntax = "proto3";
+package lessgo.embedding;
+
+// payload uses JSON to avoid coupling to the ML algorithm's evolving schema
+message MatchRequest {
+  string payload_json = 1;
+}
+
+message MatchResponse {
+  string result_json = 1;
+}
+
+service EmbeddingService {
+  rpc Match(MatchRequest) returns (MatchResponse);
+}

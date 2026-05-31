@@ -1,5 +1,5 @@
 // Shared k6 configuration for LessGo load tests
-export const BASE_URL = __ENV.BASE_URL || 'http://136.109.119.177:80';
+export const BASE_URL = __ENV.BASE_URL || 'http://localhost:3000';
 
 // Shared performance thresholds (applied per-scenario as needed)
 export const THRESHOLDS = {

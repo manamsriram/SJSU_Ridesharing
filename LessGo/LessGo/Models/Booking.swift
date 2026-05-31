@@ -22,6 +22,7 @@ struct Booking: Codable, Identifiable {
     let paymentDeadlineAt: Date?
     let cancellationReason: String?
     let riderPickupConfirmedAt: Date?
+    let paymentConfirmedAt: Date?
 
     var hasConfirmedPickup: Bool { riderPickupConfirmedAt != nil }
 
@@ -42,6 +43,7 @@ struct Booking: Codable, Identifiable {
         case paymentDeadlineAt = "payment_deadline_at"
         case cancellationReason = "cancellation_reason"
         case riderPickupConfirmedAt = "rider_pickup_confirmed_at"
+        case paymentConfirmedAt = "payment_confirmed_at"
     }
 
     init(from decoder: Decoder) throws {
@@ -65,6 +67,7 @@ struct Booking: Codable, Identifiable {
         paymentDeadlineAt = try c.decodeIfPresent(Date.self, forKey: .paymentDeadlineAt)
         cancellationReason = try c.decodeIfPresent(String.self, forKey: .cancellationReason)
         riderPickupConfirmedAt = try c.decodeIfPresent(Date.self, forKey: .riderPickupConfirmedAt)
+        paymentConfirmedAt = try c.decodeIfPresent(Date.self, forKey: .paymentConfirmedAt)
         // fare = max_price from the quotes table, returned directly on the booking by some endpoints
         if let fareDouble = try? c.decode(Double.self, forKey: .fare) {
             fare = fareDouble
@@ -108,7 +111,8 @@ struct Booking: Codable, Identifiable {
             quote: quote, payment: payment, fare: fare,
             paymentIntentId: paymentIntentId, paymentDeadlineAt: paymentDeadlineAt,
             cancellationReason: cancellationReason,
-            riderPickupConfirmedAt: riderPickupConfirmedAt
+            riderPickupConfirmedAt: riderPickupConfirmedAt,
+            paymentConfirmedAt: paymentConfirmedAt
         )
     }
 
@@ -130,7 +134,8 @@ struct Booking: Codable, Identifiable {
             paymentIntentId: updated.paymentIntentId ?? paymentIntentId,
             paymentDeadlineAt: updated.paymentDeadlineAt ?? paymentDeadlineAt,
             cancellationReason: updated.cancellationReason ?? cancellationReason,
-            riderPickupConfirmedAt: updated.riderPickupConfirmedAt ?? riderPickupConfirmedAt
+            riderPickupConfirmedAt: updated.riderPickupConfirmedAt ?? riderPickupConfirmedAt,
+            paymentConfirmedAt: updated.paymentConfirmedAt ?? paymentConfirmedAt
         )
     }
 
@@ -142,7 +147,8 @@ struct Booking: Codable, Identifiable {
         quote: Quote?, payment: Payment?, fare: Double?,
         paymentIntentId: String?, paymentDeadlineAt: Date?,
         cancellationReason: String?,
-        riderPickupConfirmedAt: Date? = nil
+        riderPickupConfirmedAt: Date? = nil,
+        paymentConfirmedAt: Date? = nil
     ) {
         self.id = id; self.tripId = tripId; self.riderId = riderId
         self.seatsBooked = seatsBooked; self.status = status
@@ -153,6 +159,7 @@ struct Booking: Codable, Identifiable {
         self.paymentIntentId = paymentIntentId; self.paymentDeadlineAt = paymentDeadlineAt
         self.cancellationReason = cancellationReason
         self.riderPickupConfirmedAt = riderPickupConfirmedAt
+        self.paymentConfirmedAt = paymentConfirmedAt
     }
 }
 

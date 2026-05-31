@@ -1,39 +1,11 @@
 import express, { Application } from 'express';
 import cors from 'cors';
 import * as emailService from './services/email.service';
+import { notificationStore, createNotification, pushNotification } from './store/notifications.store';
 
 const app: Application = express();
 app.use(express.json());
 app.use(cors());
-
-type InAppNotification = {
-  id: string;
-  user_id: string;
-  type: string;
-  title: string;
-  message: string;
-  data?: Record<string, any>;
-  created_at: string;
-  read_at: string | null;
-};
-
-const notificationStore = new Map<string, InAppNotification[]>();
-
-function createNotification(input: Omit<InAppNotification, 'id' | 'created_at' | 'read_at'>): InAppNotification {
-  return {
-    id: `notif_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`,
-    created_at: new Date().toISOString(),
-    read_at: null,
-    ...input,
-  };
-}
-
-function pushNotification(notification: InAppNotification): void {
-  const current = notificationStore.get(notification.user_id) ?? [];
-  current.unshift(notification);
-  // Keep only the most recent 200 notifications per user to avoid unbounded memory growth.
-  notificationStore.set(notification.user_id, current.slice(0, 200));
-}
 
 // Health check
 app.get('/health', (_req, res) => {
