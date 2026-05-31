@@ -199,22 +199,42 @@ endpoint emerges with sub-10ms latency targets and high call frequency.
 
 ## How to Run
 
-### Baseline (on `benchmark/http` branch)
+Scripts live on their respective branches. Results are stored in `benchmarks/results/` on main.
+
+### Booking creation (on `benchmark/http` or `benchmark/grpc` branch)
 ```bash
+TRIP_ID=c5a21ced-9952-459d-81ff-1136552861db \
 BASE_URL=$API_GATEWAY_URL \
-  k6 run benchmarks/http-baseline.js --out json=benchmarks/results/http-baseline.json
+  k6 run benchmarks/booking-creation-http.js \
+  --out json=benchmarks/results/booking-creation-http.json
+
+# gRPC variant (benchmark/grpc branch):
+TRIP_ID=c5a21ced-9952-459d-81ff-1136552861db \
+BASE_URL=$API_GATEWAY_URL \
+  k6 run benchmarks/booking-creation-grpc.js \
+  --out json=benchmarks/results/booking-creation-grpc.json
 ```
 
-### After gRPC migration (on `benchmark/grpc` branch)
+### Trip detail (on `benchmark/http` or `benchmark/grpc` branch)
 ```bash
+TRIP_ID=c5a21ced-9952-459d-81ff-1136552861db \
 BASE_URL=$API_GATEWAY_URL \
-  k6 run benchmarks/grpc-after.js --out json=benchmarks/results/grpc-after.json
+  k6 run benchmarks/trip-detail-http.js \
+  --out json=benchmarks/results/trip-detail-http.json
+
+# gRPC variant:
+TRIP_ID=c5a21ced-9952-459d-81ff-1136552861db \
+BASE_URL=$API_GATEWAY_URL \
+  k6 run benchmarks/trip-detail-grpc.js \
+  --out json=benchmarks/results/trip-detail-grpc.json
 ```
+
+> **Before running:** patch rate limit to 10000/60000 (see note at top). Restore after.
 
 ### Extract p50/p95/p99 from results
 ```bash
-cat benchmarks/results/http-baseline.json | \
-  jq '[.[] | select(.type=="Point" and .metric=="booking_creation_latency")] |
+cat benchmarks/results/booking-creation-http.json | \
+  jq '[.[] | select(.type=="Point" and .metric=="booking_creation_latency_http")] |
   {p50: (map(.data.value) | sort | .[length * 0.5 | floor]),
    p95: (map(.data.value) | sort | .[length * 0.95 | floor]),
    p99: (map(.data.value) | sort | .[length * 0.99 | floor])}'
