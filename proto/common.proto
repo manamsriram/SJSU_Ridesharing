@@ -1,7 +1,0 @@
-syntax = "proto3";
-package lessgo.common;
-
-message GeoPoint {
-  double lat = 1;
-  double lng = 2;
-}

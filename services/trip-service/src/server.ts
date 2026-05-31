@@ -1,7 +1,6 @@
 import app from './app';
 import { config } from './config';
 import { startSettlementRetryJob } from './services/settlement.retry';
-import { startGrpcServer } from './grpc-server';
 
 const PORT = config.port;
 
@@ -23,8 +22,6 @@ const server = app.listen(PORT, () => {
   `);
   startSettlementRetryJob();
 });
-
-startGrpcServer(config.grpcPort);
 
 /**
  * Graceful shutdown

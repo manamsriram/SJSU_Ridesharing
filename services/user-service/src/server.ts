@@ -1,6 +1,5 @@
 import app from './app';
 import { config } from './config';
-import { startGrpcServer } from './grpc-server';
 
 const PORT = config.port;
 
@@ -19,8 +18,6 @@ const server = app.listen(PORT, () => {
   ========================================
   `);
 });
-
-startGrpcServer(config.grpcPort);
 
 /**
  * Graceful shutdown

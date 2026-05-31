@@ -103,6 +103,25 @@ When starting a new session on this project:
 - **On-Demand Matching:** Still exists for backward compatibility, being deprecated
 - **Backend Services:** Hosted on GKE Autopilot. Only the API Gateway is externally reachable (URL in `API_GATEWAY_URL` env var). Never hardcode the gateway IP or reference localhost service URLs for production testing.
 
+### Transport Protocol Decision (gRPC vs HTTP)
+
+Benchmarked 2026-05-30 across 3 inter-service scenarios. HTTP wins every tested workload.
+
+**Use HTTP (axios) for all current inter-service calls.** All hot paths are bottlenecked by
+embedding inference, cost/routing computation, or DB I/O — transport overhead is invisible
+against these costs.
+
+**Use gRPC only when all three conditions hold:**
+1. High call frequency (hundreds/second per service pair)
+2. Small payload (sub-1 KB request + response)
+3. Sub-10ms latency target where transport overhead is a meaningful fraction of total cost
+
+Current qualifying candidates (none implemented yet):
+- Auth token introspection if moved off in-process JWT verify
+- User presence/status lookups at high fan-out
+
+Reference: `docs/grpc-migration/benchmark-results.md`
+
 ## Recent Changes (Phase 1)
 
 ### Database

@@ -6,19 +6,12 @@ import googlemaps
 import json
 import hashlib
 import os
-import sys
-import threading
 import logging
 from typing import Optional, Union
 from dotenv import load_dotenv
 
 # K8s manifest update - port fix (8002)
 from app.secret_loader import load_mounted_secrets
-
-# Add src/ to path so grpc_server can find the generated stubs
-_SRC_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "src")
-if _SRC_DIR not in sys.path:
-    sys.path.insert(0, _SRC_DIR)
 
 logger = logging.getLogger(__name__)
 
@@ -61,9 +54,6 @@ else:
 # Stub redis_client to None - caching disabled
 redis_client = None
 CACHE_TTL = 3600  # 1 hour default (kept for compatibility)
-
-GRPC_PORT = int(os.getenv("GRPC_PORT", "9002"))
-
 
 class RouteRequest(BaseModel):
     origin: str
@@ -119,18 +109,6 @@ def calculate_route_core(origin_lat: float, origin_lng: float, dest_lat: float, 
         "duration_seconds": duration_seconds,
         "polyline": polyline,
     }
-
-
-@app.on_event("startup")
-async def startup_grpc():
-    from grpc_server import serve as serve_grpc
-
-    grpc_thread = threading.Thread(
-        target=lambda: serve_grpc(calculate_route_core, GRPC_PORT).wait_for_termination(),
-        daemon=True,
-    )
-    grpc_thread.start()
-    app.state.grpc_thread = grpc_thread
 
 
 @app.get("/health")

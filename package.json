@@ -8,8 +8,6 @@
     "services/*"
   ],
   "scripts": {
-    "proto:generate": "bash scripts/generate-protos.sh",
-    "proto:clean": "rm -rf shared/generated",
     "clean:coverage": "rm -rf coverage",
     "migrate:create": "node-pg-migrate create -m shared/database/migrations",
     "migrate:up": "node-pg-migrate up -m shared/database/migrations --database-url-var DATABASE_URL --no-check-order",
@@ -52,7 +50,6 @@
   "license": "MIT",
   "dependencies": {
     "@faker-js/faker": "^8.3.1",
-    "@grpc/grpc-js": "^1.14.4",
     "bcryptjs": "^3.0.3",
     "dotenv": "^16.3.1",
     "node-pg-migrate": "^6.2.2",
@@ -62,8 +59,6 @@
     "@vitest/coverage-v8": "^2.1.9",
     "concurrently": "^9.2.1",
     "dotenv-cli": "^7.4.4",
-    "grpc-tools": "^1.13.1",
-    "ts-proto": "^2.11.8",
     "vitest": "^2.1.8"
   }
 }

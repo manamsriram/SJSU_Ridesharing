@@ -11,9 +11,7 @@ Exposes:
 from __future__ import annotations
 
 import os
-import sys
 import logging
-import threading
 from typing import List, Optional, Dict, Any
 
 from fastapi import FastAPI, HTTPException
@@ -23,8 +21,6 @@ from dotenv import load_dotenv
 
 from app import trainer
 from app import matcher
-
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "src"))
 
 load_dotenv()
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -154,7 +150,6 @@ def train_status(job_id: str):
 
 
 def _run_match(payload: dict) -> list:
-    """Core match logic shared by the HTTP and gRPC handlers."""
     req = MatchRequest(**payload)
     hin, model = _get_model()
 
@@ -199,23 +194,6 @@ def match_drivers(req: MatchRequest):
     model_used = any(r["similarity"] != 0.0 for r in result)
     ranked = [RankedCandidate(**r) for r in result]
     return MatchResponse(ranked=ranked, model_used=model_used)
-
-
-GRPC_PORT = int(os.getenv("GRPC_PORT", "4010"))
-
-
-@app.on_event("startup")
-async def startup_grpc():
-    try:
-        from grpc_server import serve as serve_grpc
-        grpc_thread = threading.Thread(
-            target=lambda: serve_grpc(_run_match, GRPC_PORT).wait_for_termination(),
-            daemon=True,
-        )
-        grpc_thread.start()
-        logger.info(f"gRPC server thread started on port {GRPC_PORT}")
-    except ImportError as e:
-        logger.warning(f"gRPC server not started (stubs missing?): {e}")
 
 
 if __name__ == "__main__":

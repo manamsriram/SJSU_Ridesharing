@@ -5,7 +5,6 @@ if (process.env.NODE_ENV !== 'test') dotenv.config();
 
 export const config = {
   port: process.env.USER_SERVICE_PORT || 3002,
-  grpcPort: parseInt(process.env.GRPC_PORT ?? '4002', 10),
   env: process.env.NODE_ENV || 'development',
 
   // Database
