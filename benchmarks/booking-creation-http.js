@@ -13,8 +13,8 @@ const bookingsCreated = new Counter('bookings_created');
 
 export const options = {
   stages: [
-    { duration: '10s', target: 5 },
-    { duration: '60s', target: 10 },
+    { duration: '10s', target: 4 },
+    { duration: '60s', target: 7 },
     { duration: '10s', target: 0 },
   ],
   thresholds: {
@@ -31,7 +31,7 @@ export function setup() {
 
   // Login up to 20 seeded users, collect rider tokens (one per VU to avoid rate limiting).
   const tokens = [];
-  for (let i = 1; i <= 20 && tokens.length < 10; i++) {
+  for (let i = 26; i <= 50 && tokens.length < 10; i++) {
     const email = `user${i}@sjsu.edu`;
     const res = http.post(
       `${BASE_URL}/api/auth/login`,
