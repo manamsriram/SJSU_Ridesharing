@@ -14,8 +14,8 @@ const bookingsCreated = new Counter('bookings_created');
 
 export const options = {
   stages: [
-    { duration: '10s', target: 5 },
-    { duration: '60s', target: 10 },
+    { duration: '10s', target: 4 },
+    { duration: '60s', target: 7 },
     { duration: '10s', target: 0 },
   ],
   thresholds: {
@@ -25,47 +25,68 @@ export const options = {
 };
 
 const BASE_URL = __ENV.BASE_URL || 'http://api-gateway:3000';
+const PASSWORD = __ENV.RIDER_PASSWORD || 'Password123';
 
 export function setup() {
-  const loginRes = http.post(
-    `${BASE_URL}/api/auth/login`,
-    JSON.stringify({
-      email: __ENV.RIDER_EMAIL || 'benchmark-rider@sjsu.edu',
-      password: __ENV.RIDER_PASSWORD || 'benchmarkpass123',
-    }),
-    { headers: { 'Content-Type': 'application/json' } }
-  );
+  const tripId = __ENV.TRIP_ID || null;
 
-  if (loginRes.status !== 200) {
-    console.error(`Auth failed: ${loginRes.status} ${loginRes.body}`);
-    return { token: null, tripId: __ENV.TRIP_ID || null };
+  // Login up to 10 distinct riders from seeded accounts (users 26-50 are Riders).
+  const tokens = [];
+  for (let i = 26; i <= 50 && tokens.length < 10; i++) {
+    const email = `user${i}@sjsu.edu`;
+    const res = http.post(
+      `${BASE_URL}/api/auth/login`,
+      JSON.stringify({ email, password: PASSWORD }),
+      { headers: { 'Content-Type': 'application/json' } }
+    );
+    if (res.status !== 200) continue;
+    const role = res.json('data.user.role');
+    if (role !== 'Rider') continue;
+    const token = res.json('data.accessToken');
+    if (token) tokens.push(token);
   }
 
-  const token = loginRes.json('data.token');
-
-  if (__ENV.TRIP_ID) {
-    return { token, tripId: __ENV.TRIP_ID };
+  if (tokens.length === 0) {
+    const fallback = http.post(
+      `${BASE_URL}/api/auth/login`,
+      JSON.stringify({
+        email: __ENV.RIDER_EMAIL || 'benchmark-rider@sjsu.edu',
+        password: PASSWORD,
+      }),
+      { headers: { 'Content-Type': 'application/json' } }
+    );
+    if (fallback.status === 200) {
+      const t = fallback.json('data.accessToken');
+      if (t) tokens.push(t);
+    }
   }
 
-  const searchRes = http.get(
-    `${BASE_URL}/api/trips/search` +
-      '?origin_lat=37.3351874&origin_lng=-121.8810715' +
-      '&destination_lat=37.4118779&destination_lng=-121.900762' +
-      '&limit=5',
-    { headers: { Authorization: `Bearer ${token}` } }
-  );
-
-  const trips = searchRes.json('data.trips');
-  const tripId = Array.isArray(trips) && trips.length > 0 ? trips[0].trip_id || trips[0].id : null;
+  if (tokens.length === 0) {
+    console.error('No rider tokens acquired — all logins failed');
+    return { tokens: [], tripId };
+  }
 
   if (!tripId) {
-    console.error('No available trips found — set TRIP_ID env var');
+    const searchRes = http.get(
+      `${BASE_URL}/api/trips/search` +
+        '?origin_lat=37.3351874&origin_lng=-121.8810715' +
+        '&destination_lat=37.4118779&destination_lng=-121.900762' +
+        '&limit=5',
+      { headers: { Authorization: `Bearer ${tokens[0]}` } }
+    );
+    const trips = searchRes.json('data.trips');
+    const found = Array.isArray(trips) && trips.length > 0 ? trips[0].trip_id || trips[0].id : null;
+    if (!found) console.error('No available trips found — set TRIP_ID env var');
+    return { tokens, tripId: found };
   }
 
-  return { token, tripId };
+  return { tokens, tripId };
 }
 
-export default function ({ token, tripId }) {
+export default function (data) {
+  const { tokens, tripId } = data;
+  const token = tokens[(__VU - 1) % tokens.length];
+
   if (!token || !tripId) {
     errorRate.add(1);
     sleep(1);

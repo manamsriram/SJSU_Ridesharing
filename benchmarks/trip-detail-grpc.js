@@ -40,7 +40,7 @@ export function setup() {
     return { token: null, tripId: __ENV.TRIP_ID || null };
   }
 
-  const token = loginRes.json('data.token');
+  const token = loginRes.json('data.accessToken');
 
   if (__ENV.TRIP_ID) {
     return { token, tripId: __ENV.TRIP_ID };
