@@ -34,6 +34,8 @@ spec:
         ports:
         - containerPort: 3009
           name: http
+        - containerPort: 4009
+          name: grpc
         volumeMounts:
         - name: secrets-store
           mountPath: /mnt/secrets-store
@@ -85,4 +87,8 @@ spec:
     port: 3009
     targetPort: 3009
     name: http
+  - protocol: TCP
+    port: 4009
+    targetPort: 4009
+    name: grpc
   type: ClusterIP

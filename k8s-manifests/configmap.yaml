@@ -21,3 +21,8 @@ data:
   ROUTING_SERVICE_URL: "http://routing-service:8002"
   SAFETY_SERVICE_URL: "http://safety-service:8000"
   GATEWAY_PUBLIC_URL: "https://lessgo-zeta.vercel.app"
+  COST_GRPC_HOST: "cost-calculation-service:4009"
+  PAYMENT_GRPC_HOST: "payment-service:4005"
+  NOTIFICATION_GRPC_HOST: "notification-service:4006"
+  TRIP_GRPC_HOST: "trip-service:4003"
+  BOOKING_GRPC_HOST: "booking-service:4004"

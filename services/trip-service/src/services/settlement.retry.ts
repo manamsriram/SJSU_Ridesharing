@@ -1,6 +1,7 @@
 import axios from 'axios';
 import { Pool } from 'pg';
 import { config } from '../config';
+import { getBookingClient, getCostClient, unary } from '../grpc-clients';
 
 const pool = new Pool({ connectionString: config.databaseUrl });
 const MAX_ATTEMPTS = 5;
@@ -25,25 +26,28 @@ async function runRetry(): Promise<void> {
   for (const row of rows) {
     try {
       // Re-run settlement
-      const settlementRes = await axios.get(`${config.costServiceUrl}/cost/settle/${row.trip_id}`);
-      const settlement = settlementRes.data.data;
+      const settlement = await unary(
+        (req, cb) => getCostClient().settleTrip(req, cb),
+        { tripId: row.trip_id },
+      );
 
       // Fetch bookings for capture
-      const bookingsRes = await axios.get(`${config.bookingServiceUrl}/bookings/trip/${row.trip_id}/settle`);
-      const raw = bookingsRes.data?.data ?? bookingsRes.data;
-      const bookings: any[] = Array.isArray(raw) ? raw : Array.isArray(raw?.bookings) ? raw.bookings : [];
+      const bookingRes = await unary(
+        (req, cb) => getBookingClient().getBookingsForSettlement(req, cb),
+        { tripId: row.trip_id },
+      );
+      const bookings = bookingRes.bookings;
 
       // Write final prices
-      if (Array.isArray(settlement?.riders)) {
+      if (Array.isArray(settlement.riders ?? [])) {
         await Promise.all(
-          (settlement.riders as any[]).map(async (rider: any) => {
-            const booking = bookings.find((b: any) => b.rider_id === rider.rider_id);
+          (settlement.riders ?? []).map(async (rider: any) => {
+            const booking = bookings.find((b: any) => b.riderId === rider.riderId);
             if (!booking) return;
-            const bookingId = booking.booking_id ?? booking.id;
-            await axios.patch(
-              `${config.bookingServiceUrl}/bookings/${bookingId}/final-price`,
-              { final_price: rider.amount_paid },
-              { headers: { 'x-internal-service': 'trip-service' } }
+            const bookingId = booking.bookingId;
+            await unary(
+              (req, cb) => getBookingClient().updateFinalPrice(req, cb),
+              { bookingId, finalPrice: rider.amount },
             ).catch((e: any) => console.error(`[SETTLE_RETRY] final-price failed for ${bookingId}:`, e.message));
           })
         );
@@ -51,10 +55,10 @@ async function runRetry(): Promise<void> {
 
       // Capture payments
       const toCapture = bookings.filter(
-        (b: any) => b.payment_intent_id && ['approved', 'completed'].includes(b.booking_state)
+        (b: any) => b.paymentId && ['approved', 'completed'].includes(b.status)
       );
       for (const booking of toCapture) {
-        const bookingId = booking.booking_id ?? booking.id;
+        const bookingId = booking.bookingId;
         await axios.post(
           `${config.bookingServiceUrl}/bookings/${bookingId}/capture-payment`,
           {},

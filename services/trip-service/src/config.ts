@@ -29,6 +29,10 @@ export const config = {
   embeddingServiceUrl: process.env.EMBEDDING_SERVICE_URL || 'http://127.0.0.1:3010',
   costServiceUrl: process.env.COST_SERVICE_URL || 'http://127.0.0.1:3009',
   routingServiceUrl: process.env.ROUTING_SERVICE_URL || 'http://127.0.0.1:8002',
+  costGrpcHost:         process.env.COST_GRPC_HOST         || '127.0.0.1:4009',
+  bookingGrpcHost:      process.env.BOOKING_GRPC_HOST      || '127.0.0.1:4004',
+  notificationGrpcHost: process.env.NOTIFICATION_GRPC_HOST || '127.0.0.1:4006',
+  paymentGrpcHost:      process.env.PAYMENT_GRPC_HOST      || '127.0.0.1:4005',
 };
 
 // Validate required config

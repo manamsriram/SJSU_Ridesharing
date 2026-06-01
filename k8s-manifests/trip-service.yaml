@@ -34,6 +34,8 @@ spec:
         ports:
         - containerPort: 3003
           name: http
+        - containerPort: 4003
+          name: grpc
         volumeMounts:
         - name: secrets-store
           mountPath: /mnt/secrets-store
@@ -85,4 +87,8 @@ spec:
     port: 3003
     targetPort: 3003
     name: http
+  - protocol: TCP
+    port: 4003
+    targetPort: 4003
+    name: grpc
   type: ClusterIP

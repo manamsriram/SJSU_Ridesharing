@@ -2,6 +2,7 @@ import { Pool } from 'pg';
 import axios from 'axios';
 import Stripe from 'stripe';
 import { config } from '../config';
+import { getCostClient, getPaymentClient, getNotificationClient, unary } from '../grpc-clients';
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '', { apiVersion: '2024-04-10' as any });
 import {
@@ -25,7 +26,12 @@ const isWithinOneHour = (departureTime: Date): boolean =>
 
 const getTripById = async (tripId: string) => {
   const result = await pool.query(
-    'SELECT trip_id, driver_id, origin, destination, seats_available, status, departure_time FROM trips WHERE trip_id = $1',
+    `SELECT trip_id, driver_id, origin, destination, seats_available, status, departure_time,
+  ST_Y(origin_point::geometry)      AS origin_lat,
+  ST_X(origin_point::geometry)      AS origin_lng,
+  ST_Y(destination_point::geometry) AS destination_lat,
+  ST_X(destination_point::geometry) AS destination_lng
+ FROM trips WHERE trip_id = $1`,
     [tripId]
   );
   return result.rows[0] ?? null;
@@ -154,14 +160,16 @@ export const createBooking = async (
     maxPrice = clientFare;
   } else {
     try {
-      const costResponse = await axios.post(`${config.costServiceUrl}/cost/calculate`, {
-        origin: trip.origin,
-        destination: trip.destination,
-        num_riders: seats_booked,
-        trip_id: trip_id,
-      });
-
-      maxPrice = costResponse.data.data.max_price;
+      const costRes = await unary(
+        (req, cb) => getCostClient().calculateCost(req, cb),
+        {
+          origin:      { lat: trip.origin_lat,      lng: trip.origin_lng },
+          destination: { lat: trip.destination_lat, lng: trip.destination_lng },
+          numRiders: seats_booked,
+          tripId: trip_id,
+        },
+      );
+      maxPrice = costRes.maxPrice;
     } catch (error) {
       // Fallback: calculate price locally if cost service is unavailable
       console.warn('Cost service unavailable, using fallback pricing');
@@ -264,13 +272,16 @@ export const getBookingById = async (bookingId: string): Promise<BookingWithDeta
         row = { ...row, booking_state: 'cancelled' };
 
         // Notify the rider that their request expired (fire-and-forget)
-        axios.post(`${config.notificationServiceUrl}/notifications/send`, {
-          user_id: row.rider_id,
-          type: 'booking_expired',
-          title: 'Request Expired',
-          message: "Driver didn't respond — your request expired. Browse other rides.",
-          data: { booking_id: bookingId },
-        }).catch((notifErr: unknown) => {
+        unary(
+          (req, cb) => getNotificationClient().sendNotification(req, cb),
+          {
+            userId: row.rider_id,
+            type: 'booking_expired',
+            title: 'Request Expired',
+            message: "Driver didn't respond — your request expired. Browse other rides.",
+            data: { fields: { booking_id: bookingId } },
+          },
+        ).catch((notifErr: unknown) => {
           console.warn(`[LAZY_EXPIRY] Failed to send expiry notification for booking ${bookingId}:`, notifErr);
         });
       }
@@ -311,13 +322,16 @@ export const getBookingById = async (bookingId: string): Promise<BookingWithDeta
         );
         row = { ...row, booking_state: 'cancelled', cancellation_reason: 'payment_not_completed' };
 
-        axios.post(`${config.notificationServiceUrl}/notifications/send`, {
-          user_id: row.rider_id,
-          type: 'booking_payment_expired',
-          title: 'Booking Cancelled',
-          message: 'Your booking was cancelled because payment was not completed before the deadline.',
-          data: { booking_id: bookingId },
-        }).catch((notifErr: unknown) => {
+        unary(
+          (req, cb) => getNotificationClient().sendNotification(req, cb),
+          {
+            userId: row.rider_id,
+            type: 'booking_payment_expired',
+            title: 'Booking Cancelled',
+            message: 'Your booking was cancelled because payment was not completed before the deadline.',
+            data: { fields: { booking_id: bookingId } },
+          },
+        ).catch((notifErr: unknown) => {
           console.warn(`[LAZY_PAYMENT_EXPIRY] Failed to send notification for booking ${bookingId}:`, notifErr);
         });
       }
@@ -470,12 +484,12 @@ export const confirmBooking = async (
       // No payment exists - create one via Payment Service
       console.log(`[CONFIRM] Creating payment for booking ${bookingId}`);
       try {
-        const paymentResponse = await axios.post(`${config.paymentServiceUrl}/payments/create-intent`, {
-          booking_id: bookingId,
-          amount: bookingData.quote.max_price,
-        });
-        payment = paymentResponse.data.data;
-        createdPaymentId = payment?.payment_id || null;
+        const paymentRes = await unary(
+          (req, cb) => getPaymentClient().createPaymentIntent(req, cb),
+          { bookingId, amount: bookingData.quote.max_price },
+        );
+        payment = { payment_id: paymentRes.paymentId, client_secret: paymentRes.clientSecret, status: 'pending' } as any;
+        createdPaymentId = paymentRes.paymentId || null;
       } catch (error: any) {
         console.error(`[CONFIRM] Payment creation failed for booking ${bookingId}:`, error.response?.data || error.message);
         throw new Error('Failed to create payment intent');
@@ -511,7 +525,7 @@ export const confirmBooking = async (
     await client.query('ROLLBACK');
     if (createdPaymentId) {
       try {
-        await axios.post(`${config.paymentServiceUrl}/payments/${createdPaymentId}/cancel`);
+        await unary((req, cb) => getPaymentClient().cancelPayment(req, cb), { paymentId: createdPaymentId! });
       } catch (cancelErr) {
         console.error(`[CONFIRM] Failed to cancel orphaned payment ${createdPaymentId}:`, cancelErr);
       }
@@ -599,10 +613,10 @@ export const cancelBooking = async (
     if (wasConfirmed && bookingData.payment) {
       if (bookingData.payment.status === 'captured') {
         // Refund captured payments
-        await axios.post(`${config.paymentServiceUrl}/payments/${bookingData.payment.payment_id}/refund`);
+        await unary((req, cb) => getPaymentClient().refundPayment(req, cb), { paymentId: bookingData.payment.payment_id });
       } else if (bookingData.payment.status === 'pending') {
         // Cancel pending payment intents
-        await axios.post(`${config.paymentServiceUrl}/payments/${bookingData.payment.payment_id}/cancel`);
+        await unary((req, cb) => getPaymentClient().cancelPayment(req, cb), { paymentId: bookingData.payment.payment_id });
       }
     }
 
@@ -1056,13 +1070,16 @@ export const authorizePayment = async (
       [bookingData.trip_id, bookingData.rider_id]
     );
     for (const row of allRiders.rows) {
-      axios.post(`${config.notificationServiceUrl}/notifications/send`, {
-        user_id: row.rider_id,
-        type: 'route_updated',
-        title: 'Route Updated',
-        message: 'The pickup route has been updated. Check your ride details.',
-        data: { trip_id: bookingData.trip_id },
-      }).catch(() => {});
+      unary(
+        (req, cb) => getNotificationClient().sendNotification(req, cb),
+        {
+          userId: row.rider_id,
+          type: 'route_updated',
+          title: 'Route Updated',
+          message: 'The pickup route has been updated. Check your ride details.',
+          data: { fields: { trip_id: bookingData.trip_id } },
+        },
+      ).catch(() => {});
     }
   } catch { /* non-fatal */ }
 

@@ -1,6 +1,7 @@
 import { Pool } from 'pg';
 import axios from 'axios';
 import { config } from '../config';
+import { getNotificationClient, getPaymentClient, unary } from '../grpc-clients';
 import { Trip, TripWithDriver, CreateTripRequest, TripStatus, GeoPoint, AppError } from '@lessgo/shared';
 import { geocodeTripLocations } from '../utils/geocoding';
 import { mineFrequentRouteFromTrip } from './frequent_route.service';
@@ -592,8 +593,10 @@ export const cancelTrip = async (tripId: string, driverId: string): Promise<Trip
   );
 
   // Release Stripe holds via payment-service (fire-and-forget)
-  axios.post(`${config.paymentServiceUrl}/payments/trip/${tripId}/cancel-intents`)
-    .catch((err: any) => console.warn(`[cancelTrip] payment-service cancel-intents failed:`, err.message));
+  unary(
+    (req, cb) => getPaymentClient().cancelTripIntents(req, cb),
+    { tripId },
+  ).catch((err: any) => console.warn(`[cancelTrip] payment-service cancel-intents failed:`, err.message));
 
   // Bulk-cancel all active bookings
   if (bookingsResult.rows.length > 0) {
@@ -609,13 +612,16 @@ export const cancelTrip = async (tripId: string, driverId: string): Promise<Trip
 
     // Notify each affected rider (fire-and-forget)
     for (const b of bookingsResult.rows) {
-      axios.post(`${config.notificationServiceUrl}/notifications/send`, {
-        user_id: b.rider_id,
-        type: 'trip_cancelled_by_driver',
-        title: 'Trip Cancelled',
-        message: `Your driver cancelled the trip from ${trip.origin} to ${trip.destination}. Any payment hold has been released.`,
-        data: { trip_id: tripId },
-      }).catch(() => {});
+      unary(
+        (req, cb) => getNotificationClient().sendNotification(req, cb),
+        {
+          userId: b.rider_id,
+          type: 'trip_cancelled_by_driver',
+          title: 'Trip Cancelled',
+          message: `Your driver cancelled the trip from ${trip.origin} to ${trip.destination}. Any payment hold has been released.`,
+          data: { fields: { trip_id: tripId } },
+        },
+      ).catch(() => {});
     }
   }
 
@@ -1255,8 +1261,9 @@ export const releaseExpiredHolds = async (): Promise<{ released: number }> => {
   let released = 0;
   for (const row of result.rows) {
     try {
-      await axios.post(
-        `${config.paymentServiceUrl}/payments/trip/${row.booking_id}/cancel-intents`
+      await unary(
+        (req, cb) => getPaymentClient().cancelTripIntents(req, cb),
+        { tripId: row.booking_id },
       ).catch(() => {});
       // Clear the intent ID so we don't retry this booking
       await pool.query(

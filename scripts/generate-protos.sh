@@ -17,3 +17,15 @@ $PROTOC \
   "$PROTO_DIR"/*.proto
 
 echo "TypeScript stubs generated in $TS_OUT"
+
+# Copy client stubs to calling services
+cp "$TS_OUT/cost.ts"         "services/booking-service/src/generated/"
+cp "$TS_OUT/payment.ts"      "services/booking-service/src/generated/"
+cp "$TS_OUT/notification.ts" "services/booking-service/src/generated/"
+cp "$TS_OUT/trip.ts"         "services/booking-service/src/generated/"
+cp "$TS_OUT/booking.ts"      "services/trip-service/src/generated/"
+cp "$TS_OUT/cost.ts"         "services/trip-service/src/generated/"
+cp "$TS_OUT/notification.ts" "services/trip-service/src/generated/"
+cp "$TS_OUT/payment.ts"      "services/trip-service/src/generated/"
+cp "$TS_OUT/common.ts"       "services/trip-service/src/generated/"
+echo "Client stubs copied to calling services"
