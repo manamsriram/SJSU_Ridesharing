@@ -13,8 +13,8 @@ const bookingsCreated = new Counter('bookings_created');
 
 export const options = {
   stages: [
-    { duration: '10s', target: 4 },
-    { duration: '60s', target: 7 },
+    { duration: '10s', target: 10 },
+    { duration: '60s', target: 20 },
     { duration: '10s', target: 0 },
   ],
   thresholds: {
