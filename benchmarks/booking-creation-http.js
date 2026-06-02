@@ -13,8 +13,8 @@ const bookingsCreated = new Counter('bookings_created');
 
 export const options = {
   stages: [
-    { duration: '10s', target: 4 },
-    { duration: '60s', target: 7 },
+    { duration: '10s', target: 10 },
+    { duration: '60s', target: 20 },
     { duration: '10s', target: 0 },
   ],
   thresholds: {
@@ -31,7 +31,7 @@ export function setup() {
 
   // Login up to 20 seeded users, collect rider tokens (one per VU to avoid rate limiting).
   const tokens = [];
-  for (let i = 26; i <= 50 && tokens.length < 10; i++) {
+  for (let i = 26; i <= 50 && tokens.length < 20; i++) {
     const email = `user${i}@sjsu.edu`;
     const res = http.post(
       `${BASE_URL}/api/auth/login`,
@@ -67,25 +67,35 @@ export function setup() {
   }
 
   if (!tripId) {
+    // Require departure at least 2 hours out so the 1-hour lock never triggers during the run.
+    const departureAfter = new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString();
     const searchRes = http.get(
       `${BASE_URL}/api/trips/search` +
         '?origin_lat=37.3351874&origin_lng=-121.8810715' +
         '&destination_lat=37.4118779&destination_lng=-121.900762' +
-        '&limit=5',
+        `&departure_after=${encodeURIComponent(departureAfter)}` +
+        '&limit=20',
       { headers: { Authorization: `Bearer ${tokens[0]}` } }
     );
     const trips = searchRes.json('data.trips');
-    const found = Array.isArray(trips) && trips.length > 0 ? trips[0].trip_id || trips[0].id : null;
-    if (!found) console.error('No available trips found — set TRIP_ID env var');
-    return { tokens, tripId: found };
+    if (!Array.isArray(trips) || trips.length === 0) {
+      console.error('No available trips found — re-seed the DB or set TRIP_ID env var');
+      return { tokens, tripIds: [] };
+    }
+    // Collect up to 10 distinct trip IDs so VUs can spread load across trips
+    // and avoid seat exhaustion on a single trip.
+    const tripIds = trips.slice(0, 10).map((t) => t.trip_id || t.id).filter(Boolean);
+    return { tokens, tripIds };
   }
 
-  return { tokens, tripId };
+  return { tokens, tripIds: [tripId] };
 }
 
 export default function (data) {
-  const { tokens, tripId } = data;
+  const { tokens, tripIds } = data;
   const token = tokens[(__VU - 1) % tokens.length];
+  // Spread VUs across available trips to avoid seat exhaustion on a single trip
+  const tripId = tripIds && tripIds.length > 0 ? tripIds[(__VU - 1) % tripIds.length] : null;
 
   if (!token || !tripId) {
     errorRate.add(1);
