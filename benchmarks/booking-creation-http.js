@@ -29,10 +29,10 @@ const PASSWORD = __ENV.RIDER_PASSWORD || 'Password123';
 export function setup() {
   const tripId = __ENV.TRIP_ID || null;
 
-  // Login up to 20 seeded users, collect rider tokens (one per VU to avoid rate limiting).
+  // Login up to 20 benchmark riders created by benchmark-setup.js.
   const tokens = [];
-  for (let i = 26; i <= 50 && tokens.length < 20; i++) {
-    const email = `user${i}@sjsu.edu`;
+  for (let i = 1; i <= 20 && tokens.length < 20; i++) {
+    const email = `benchmark-rider-${String(i).padStart(2, '0')}@sjsu.edu`;
     const res = http.post(
       `${BASE_URL}/api/auth/login`,
       JSON.stringify({ email, password: PASSWORD }),
