@@ -175,7 +175,7 @@ async function seed() {
     for (const hub of HUBS) {
       for (let j = 0; j < hub.count; j++) {
         const driverId = nextDriver();
-        const seats = Math.floor(Math.random() * 4) + 1; // 1–4
+        const seats = Math.floor(Math.random() * 3) + 8; // 8–10 (high for benchmark load tests)
         const hour = pickHour(MORNING_HOURS);
         const minute = pickMinute();
         const departure = futureDateWithHour(hour, minute);
@@ -215,7 +215,7 @@ async function seed() {
     for (const hub of HUBS) {
       for (let j = 0; j < hub.count; j++) {
         const driverId = nextDriver();
-        const seats = Math.floor(Math.random() * 4) + 1;
+        const seats = Math.floor(Math.random() * 3) + 8; // 8–10 (high for benchmark load tests)
         const hour = pickHour(AFTERNOON_HOURS);
         const minute = pickMinute();
         const departure = futureDateWithHour(hour, minute);
