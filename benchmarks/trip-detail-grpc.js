@@ -41,6 +41,7 @@ export function setup() {
   }
 
   const token = loginRes.json('data.accessToken');
+  const driverUserId = loginRes.json('data.user.user_id');
 
   if (__ENV.TRIP_ID) {
     return { token, tripId: __ENV.TRIP_ID };
@@ -50,13 +51,17 @@ export function setup() {
     headers: { Authorization: `Bearer ${token}` },
   });
 
-  const trips = tripsRes.json('data.trips') || tripsRes.json('data');
-  const tripId = Array.isArray(trips) && trips.length > 0
-    ? trips[0].trip_id || trips[0].id
+  const allTrips = tripsRes.json('data.trips') || tripsRes.json('data') || [];
+  // Filter to only trips owned by the authenticated driver — /api/trips returns all trips
+  const ownTrips = Array.isArray(allTrips)
+    ? allTrips.filter((t) => t.driver_id === driverUserId)
+    : [];
+  const tripId = ownTrips.length > 0
+    ? ownTrips[0].trip_id || ownTrips[0].id
     : null;
 
   if (!tripId) {
-    console.error('No driver trips found — set TRIP_ID env var');
+    console.error(`No trips found for driver ${driverUserId} — run benchmark:setup first`);
   }
 
   return { token, tripId };
