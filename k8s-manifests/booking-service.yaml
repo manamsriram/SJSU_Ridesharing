@@ -50,12 +50,14 @@ spec:
               name: lessgo-stripe-secret
               key: STRIPE_SECRET_KEY
         resources:
+          # BENCHMARK: elevated for 20-VU load test. Restore to production values after testing:
+          #   requests: cpu 100m, memory 128Mi  |  limits: cpu 500m, memory 256Mi
           requests:
-            memory: "128Mi"
-            cpu: "100m"
-          limits:
             memory: "256Mi"
-            cpu: "500m"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "2000m"
         livenessProbe:
           httpGet:
             path: /health

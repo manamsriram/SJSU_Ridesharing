@@ -6,6 +6,8 @@ metadata:
 data:
   NODE_ENV: "production"
   JWT_ACCESS_EXPIRY: "2h"
+  # BENCHMARK: rate limit raised for 20-VU load test. Restore to production values after testing:
+  #   RATE_LIMIT_WINDOW_MS: "900000"  RATE_LIMIT_MAX_REQUESTS: "300"
   RATE_LIMIT_WINDOW_MS: "60000"
   RATE_LIMIT_MAX_REQUESTS: "100000"
   ROUTE_CACHE_TTL: "3600"
