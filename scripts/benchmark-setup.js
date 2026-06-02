@@ -101,7 +101,7 @@ async function setup() {
             $1, $2, $3,
             ST_SetSRID(ST_MakePoint($4, $5), 4326),
             ST_SetSRID(ST_MakePoint($6, $7), 4326),
-            $8, 20, 'active'
+            $8, 20, 'pending'
           ) RETURNING trip_id
         `, [
           driverId,
