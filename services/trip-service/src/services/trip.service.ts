@@ -4,6 +4,10 @@ import { config } from '../config';
 import { Trip, TripWithDriver, CreateTripRequest, TripStatus, GeoPoint, AppError } from '@lessgo/shared';
 import { geocodeTripLocations } from '../utils/geocoding';
 import { mineFrequentRouteFromTrip } from './frequent_route.service';
+import { cacheGet, cacheSet, cacheDel } from '../utils/redisClient';
+
+const TRIP_DETAIL_TTL = 30;    // seconds — matches iOS booking-status polling cadence
+const DRIVER_PROFILE_TTL = 300; // 5 minutes — driver info changes rarely
 import {
   rankWithEmbedding,
   computeScost,
@@ -169,6 +173,12 @@ export const createTrip = async (
  * @returns Trip if found, null otherwise
  */
 export const getTripById = async (tripId: string): Promise<TripWithDriver | null> => {
+  const cacheKey = `trip:detail:${tripId}`;
+  const cached = await cacheGet(cacheKey);
+  if (cached) {
+    return JSON.parse(cached) as TripWithDriver;
+  }
+
   const query = `
     SELECT
       t.trip_id, t.driver_id, t.origin, t.destination,
@@ -209,7 +219,7 @@ export const getTripById = async (tripId: string): Promise<TripWithDriver | null
 
   const row = result.rows[0];
 
-  return {
+  const trip: TripWithDriver = {
     trip_id: row.trip_id,
     driver_id: row.driver_id,
     origin: row.origin,
@@ -237,6 +247,13 @@ export const getTripById = async (tripId: string): Promise<TripWithDriver | null
       updated_at: row.driver_updated_at,
     },
   };
+
+  await Promise.all([
+    cacheSet(cacheKey, JSON.stringify(trip), TRIP_DETAIL_TTL),
+    cacheSet(`driver:profile:${row.driver_user_id}`, JSON.stringify(trip.driver), DRIVER_PROFILE_TTL),
+  ]);
+
+  return trip;
 };
 
 /**
@@ -343,7 +360,7 @@ export const searchTripsNearby = async (
 
   const result = await pool.query(query, values);
 
-  return result.rows.map((row) => ({
+  const trips = result.rows.map((row) => ({
     trip_id: row.trip_id,
     driver_id: row.driver_id,
     origin: row.origin,
@@ -370,6 +387,15 @@ export const searchTripsNearby = async (
       updated_at: row.driver_updated_at,
     },
   }));
+
+  // Side-effect: warm driver profile cache from JOIN results (deduped by user_id)
+  const seen = new Set<string>();
+  const profileCacheOps = trips
+    .filter(t => { const fresh = !seen.has(t.driver.user_id); seen.add(t.driver.user_id); return fresh; })
+    .map(t => cacheSet(`driver:profile:${t.driver.user_id}`, JSON.stringify(t.driver), DRIVER_PROFILE_TTL));
+  void Promise.all(profileCacheOps);
+
+  return trips;
 };
 
 /**
@@ -619,6 +645,8 @@ export const cancelTrip = async (tripId: string, driverId: string): Promise<Trip
     }
   }
 
+  await cacheDel(`trip:detail:${tripId}`);
+
   const result = await pool.query(
     `UPDATE trips
      SET status = $1, updated_at = current_timestamp
@@ -685,6 +713,7 @@ const checkRiderConfirmations = async (tripId: string): Promise<void> => {
  * Private helper; callers are updateTripState and updateTripStateForce.
  */
 const _performTripStateUpdate = async (tripId: string, newStatus: TripStatus): Promise<any> => {
+  await cacheDel(`trip:detail:${tripId}`);
   // Determine which timestamp to update based on state
   let timestampField = '';
 
@@ -1225,12 +1254,12 @@ export const processDeadlineCancellations = async (): Promise<{ processed: numbe
 
       axios.post(`${config.notificationServiceUrl}/notifications/send/payment-deadline-cancelled`, notifPayload)
         .catch((err: unknown) => {
-          console.warn(`[processDeadlineCancellations] Notification failed for booking ${row.booking_id}:`, err);
+          console.warn('[processDeadlineCancellations] Notification failed for booking', row.booking_id, err);
         });
 
-      console.log(`[processDeadlineCancellations] Processed booking ${row.booking_id} (reason: ${row.cancellation_reason})`);
+      console.log('[processDeadlineCancellations] Processed booking', row.booking_id, '(reason:', row.cancellation_reason, ')');
     } catch (err) {
-      console.error(`[processDeadlineCancellations] Error processing booking ${row.booking_id}:`, err);
+      console.error('[processDeadlineCancellations] Error processing booking', row.booking_id, err);
     }
   }
 
@@ -1265,7 +1294,7 @@ export const releaseExpiredHolds = async (): Promise<{ released: number }> => {
       );
       released++;
     } catch (err) {
-      console.error(`[releaseExpiredHolds] Failed for booking ${row.booking_id}:`, err);
+      console.error('[releaseExpiredHolds] Failed for booking', row.booking_id, err);
     }
   }
 
