@@ -409,23 +409,36 @@ export async function matchRider(
   let bestScost = Infinity;
   let bestBreakdown: ScostBreakdown | null = null;
 
-  for (const trip of candidates) {
-    const existingPassengersResult = await pool.query<{ count: string }>(
-      `SELECT COUNT(*) FROM bookings
-       WHERE trip_id = $1 AND status NOT IN ('cancelled')`,
-      [trip.trip_id]
-    );
-    const existingPassengers = parseInt(existingPassengersResult.rows[0].count, 10);
+  // Batch-fetch passenger counts and social history for all candidates in 2 queries
+  // instead of 2 queries × N candidates (N+1 pattern).
+  const tripIds = candidates.map(c => c.trip_id);
+  const driverIds = [...new Set(candidates.map(c => c.driver_id))];
 
-    // Check social history: has this rider ever shared a trip with this driver?
-    const socialResult = await pool.query<{ count: string }>(
-      `SELECT COUNT(*) FROM bookings b
+  const [passengerResult, socialResult] = await Promise.all([
+    pool.query<{ trip_id: string; count: string }>(
+      `SELECT trip_id, COUNT(*) AS count
+       FROM bookings
+       WHERE trip_id = ANY($1::uuid[]) AND status NOT IN ('cancelled')
+       GROUP BY trip_id`,
+      [tripIds]
+    ),
+    pool.query<{ driver_id: string }>(
+      `SELECT DISTINCT t.driver_id
+       FROM bookings b
        JOIN trips t ON b.trip_id = t.trip_id
-       WHERE b.rider_id = $1 AND t.driver_id = $2
+       WHERE b.rider_id = $1
+         AND t.driver_id = ANY($2::uuid[])
          AND b.status NOT IN ('cancelled')`,
-      [req.rider_id, trip.driver_id]
-    );
-    const hasSocialHistory = parseInt(socialResult.rows[0].count, 10) > 0;
+      [req.rider_id, driverIds]
+    ),
+  ]);
+
+  const passengerMap = new Map(passengerResult.rows.map(r => [r.trip_id, parseInt(r.count, 10)]));
+  const socialDrivers = new Set(socialResult.rows.map(r => r.driver_id));
+
+  for (const trip of candidates) {
+    const existingPassengers = passengerMap.get(trip.trip_id) ?? 0;
+    const hasSocialHistory   = socialDrivers.has(trip.driver_id);
 
     const bd = computeScost(req, trip, existingPassengers, hasSocialHistory);
 

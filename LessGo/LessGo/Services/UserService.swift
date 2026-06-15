@@ -12,20 +12,27 @@ class UserService {
     // MARK: - Get User Profile
 
     func getUserProfile(id: String) async throws -> User {
+        let cacheKey = "user:\(id)"
+        if let cached = ProfileCache.shared.get(cacheKey, as: User.self) { return cached }
         let user: User = try await network.request(
             endpoint: "/users/\(id)",
             method: .get,
             requiresAuth: true
         )
+        ProfileCache.shared.set(user, forKey: cacheKey, ttl: ProfileCache.userProfileTTL)
         return user
     }
 
     func getCurrentUserProfile() async throws -> User {
+        let cacheKey = "user:me"
+        if let cached = ProfileCache.shared.get(cacheKey, as: User.self) { return cached }
         let user: User = try await network.request(
             endpoint: "/users/me",
             method: .get,
             requiresAuth: true
         )
+        ProfileCache.shared.set(user, forKey: cacheKey, ttl: ProfileCache.userProfileTTL)
+        ProfileCache.shared.set(user, forKey: "user:\(user.id)", ttl: ProfileCache.userProfileTTL)
         return user
     }
 
@@ -33,12 +40,8 @@ class UserService {
 
     func updateProfile(id: String, name: String? = nil, email: String? = nil) async throws -> User {
         var body: [String: String] = [:]
-        if let name = name {
-            body["name"] = name
-        }
-        if let email = email {
-            body["email"] = email
-        }
+        if let name = name { body["name"] = name }
+        if let email = email { body["email"] = email }
 
         let user: User = try await network.request(
             endpoint: "/users/\(id)",
@@ -46,7 +49,8 @@ class UserService {
             body: body,
             requiresAuth: true
         )
-
+        ProfileCache.shared.remove("user:\(id)")
+        ProfileCache.shared.remove("user:me")
         return user
     }
 
@@ -61,7 +65,8 @@ class UserService {
             body: body,
             requiresAuth: true
         )
-
+        ProfileCache.shared.remove("user:\(id)")
+        ProfileCache.shared.remove("user:me")
         return user
     }
 
@@ -114,9 +119,7 @@ class UserService {
     // MARK: - Role Switching
 
     func updateUserRole(userId: String, role: UserRole) async throws -> User {
-        struct RoleUpdateRequest: Encodable {
-            let role: String
-        }
+        struct RoleUpdateRequest: Encodable { let role: String }
 
         let user: User = try await network.request(
             endpoint: "/users/\(userId)/role",
@@ -124,7 +127,8 @@ class UserService {
             body: RoleUpdateRequest(role: role.rawValue),
             requiresAuth: true
         )
-
+        ProfileCache.shared.remove("user:\(userId)")
+        ProfileCache.shared.remove("user:me")
         return user
     }
 
@@ -143,7 +147,8 @@ class UserService {
             files: ["image": (imageData, filename)],
             requiresAuth: true
         )
-
+        ProfileCache.shared.remove("user:\(userId)")
+        ProfileCache.shared.remove("user:me")
         return user
     }
 
@@ -153,7 +158,8 @@ class UserService {
             method: .delete,
             requiresAuth: true
         )
-
+        ProfileCache.shared.remove("user:\(userId)")
+        ProfileCache.shared.remove("user:me")
         return user
     }
 

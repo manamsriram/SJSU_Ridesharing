@@ -22,16 +22,21 @@ final class VehicleService {
     // MARK: - Makes
 
     func fetchMakes() async throws -> [String] {
+        let cacheKey = "vehicle:makes"
+        if let cached = ProfileCache.shared.get(cacheKey, as: [String].self) { return cached }
         let url = try makeURL("/vehicles/makes")
         let (data, response) = try await fetch(url: url)
         try validate(response: response)
-        let decoded = try decoder().decode(VehicleMakesResponse.self, from: data)
-        return decoded.makes
+        let makes = try decoder().decode(VehicleMakesResponse.self, from: data).makes
+        ProfileCache.shared.set(makes, forKey: cacheKey, ttl: ProfileCache.vehicleDataTTL)
+        return makes
     }
 
     // MARK: - Models
 
     func fetchModels(make: String, year: Int) async throws -> [String] {
+        let cacheKey = "vehicle:models:\(make.lowercased()):\(year)"
+        if let cached = ProfileCache.shared.get(cacheKey, as: [String].self) { return cached }
         var components = URLComponents(string: "\(baseURL)/vehicles/models")!
         components.queryItems = [
             URLQueryItem(name: "make", value: make),
@@ -40,13 +45,16 @@ final class VehicleService {
         guard let url = components.url else { throw VehicleError.invalidURL }
         let (data, response) = try await fetch(url: url)
         try validate(response: response)
-        let decoded = try decoder().decode(VehicleModelsResponse.self, from: data)
-        return decoded.models
+        let models = try decoder().decode(VehicleModelsResponse.self, from: data).models
+        ProfileCache.shared.set(models, forKey: cacheKey, ttl: ProfileCache.vehicleDataTTL)
+        return models
     }
 
     // MARK: - Specs
 
     func fetchSpecs(make: String, model: String, year: Int) async throws -> VehicleSpecs {
+        let cacheKey = "vehicle:specs:\(make.lowercased()):\(model.lowercased()):\(year)"
+        if let cached = ProfileCache.shared.get(cacheKey, as: VehicleSpecs.self) { return cached }
         var components = URLComponents(string: "\(baseURL)/vehicles/specs")!
         components.queryItems = [
             URLQueryItem(name: "make",  value: make),
@@ -56,13 +64,17 @@ final class VehicleService {
         guard let url = components.url else { throw VehicleError.invalidURL }
         let (data, response) = try await fetch(url: url)
         try validate(response: response)
-        return try decoder().decode(VehicleSpecs.self, from: data)
+        let specs = try decoder().decode(VehicleSpecs.self, from: data)
+        ProfileCache.shared.set(specs, forKey: cacheKey, ttl: ProfileCache.vehicleDataTTL)
+        return specs
     }
 
     // MARK: - Photo
 
     /// Returns a Wikipedia thumbnail URL for the vehicle, or nil if none found.
     func fetchPhoto(make: String, model: String, year: Int) async throws -> String? {
+        let cacheKey = "vehicle:photo:\(make.lowercased()):\(model.lowercased()):\(year)"
+        if let cached = ProfileCache.shared.get(cacheKey, as: String.self) { return cached }
         var components = URLComponents(string: "\(baseURL)/vehicles/photo")!
         components.queryItems = [
             URLQueryItem(name: "make",  value: make),
@@ -72,8 +84,9 @@ final class VehicleService {
         guard let url = components.url else { throw VehicleError.invalidURL }
         let (data, response) = try await fetch(url: url)
         try validate(response: response)
-        let decoded = try decoder().decode(VehiclePhotoResponse.self, from: data)
-        return decoded.photoURL
+        let photoURL = try decoder().decode(VehiclePhotoResponse.self, from: data).photoURL
+        if let photoURL { ProfileCache.shared.set(photoURL, forKey: cacheKey, ttl: ProfileCache.vehicleDataTTL) }
+        return photoURL
     }
 
     // MARK: - Internals
