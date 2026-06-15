@@ -10,7 +10,7 @@ struct VehicleModelsResponse: Decodable {
     let models: [String]
 }
 
-struct VehicleTrim: Decodable, Identifiable {
+struct VehicleTrim: Codable, Identifiable {
     let id: String
     let trimName: String
 
@@ -28,7 +28,7 @@ struct VehiclePhotoResponse: Decodable {
     }
 }
 
-struct VehicleSpecs: Decodable {
+struct VehicleSpecs: Codable {
     let make: String
     let model: String
     let year: Int
