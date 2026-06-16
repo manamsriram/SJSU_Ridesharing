@@ -200,6 +200,7 @@ async def calculate_route(request: RouteRequest):
             raise HTTPException(status_code=503, detail=str(e))
         raise HTTPException(status_code=400, detail=str(e))
     except googlemaps.exceptions.ApiError as e:
+        logger.error(f"Google Maps API error for {origin_str} -> {destination_str}: {e}")
         raise HTTPException(status_code=502, detail=f"Google Maps API error: {str(e)}")
     except HTTPException:
         raise
