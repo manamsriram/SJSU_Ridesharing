@@ -42,9 +42,9 @@ export const createBooking = async (
   bookingData: CreateBookingRequest
 ): Promise<{ booking: Booking; quote: Quote }> => {
   const { trip_id, seats_booked, scost_breakdown } = bookingData;
-  // pickup_location and fare are not in CreateBookingRequest type but may be sent by clients.
-  const pickupLocation = (bookingData as any).pickup_location ?? null;
-  const clientFare: number | null = (bookingData as any).fare ?? null;
+  const pickupLocation = bookingData.pickup_location ?? null;
+  const dropoffLocation = bookingData.dropoff_location ?? null;
+  const clientFare: number | null = bookingData.fare ?? null;
 
   // Check trip availability
   const tripQuery = `
@@ -120,10 +120,10 @@ export const createBooking = async (
     // Compute hold expiry: MIN(NOW() + 2h, departure_time - 1h)
     const holdExpiresAt = `LEAST(NOW() + INTERVAL '2 hours', $8::timestamptz - INTERVAL '1 hour')`;
 
-    // Create booking (store pickup_location if provided for detour-aware settlement)
+    // Create booking (store pickup/dropoff_location if provided for detour-aware settlement)
     const bookingQuery = `
-      INSERT INTO bookings (trip_id, rider_id, seats_booked, status, booking_state, pickup_location, scost_breakdown, hold_expires_at)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, ${holdExpiresAt})
+      INSERT INTO bookings (trip_id, rider_id, seats_booked, status, booking_state, pickup_location, dropoff_location, scost_breakdown, hold_expires_at)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, ${holdExpiresAt})
       RETURNING *
     `;
     const bookingResult = await client.query(bookingQuery, [
@@ -133,6 +133,7 @@ export const createBooking = async (
       BookingStatus.Pending,
       'pending',  // booking_state for driver approval flow
       pickupLocation ? JSON.stringify(pickupLocation) : null,
+      dropoffLocation ? JSON.stringify(dropoffLocation) : null,
       scost_breakdown ? JSON.stringify(scost_breakdown) : null,
       trip.departure_time,
     ]);
@@ -343,6 +344,7 @@ export const getBookingById = async (bookingId: string): Promise<BookingWithDeta
     payment_deadline_at: row.payment_deadline_at || null,
     cancellation_reason: row.cancellation_reason || null,
     pickup_location: row.pickup_location || null,
+    dropoff_location: row.dropoff_location || null,
     created_at: row.created_at,
     updated_at: row.updated_at,
     trip: {
@@ -753,6 +755,7 @@ export const getBookingsByTripId = async (tripId: string): Promise<{ bookings: a
       b.status,
       b.booking_state,
       b.pickup_location,
+      b.dropoff_location,
       b.scost_breakdown,
       b.hold_expires_at,
       b.created_at,

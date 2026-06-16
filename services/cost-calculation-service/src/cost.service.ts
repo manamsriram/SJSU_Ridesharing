@@ -84,6 +84,29 @@ export interface SettleTripResult {
   riders: RiderSettlement[];
 }
 
+interface ParsedLocation {
+  lat?: number;
+  lng?: number;
+  address?: string;
+}
+
+function parseLocation(raw: unknown): ParsedLocation | null {
+  if (!raw) return null;
+  let loc: any = raw;
+  try {
+    loc = typeof raw === 'string' ? JSON.parse(raw) : raw;
+  } catch {
+    const parts = String(raw).split(',');
+    if (parts.length === 2) {
+      loc = { lat: parseFloat(parts[0]), lng: parseFloat(parts[1]) };
+    }
+  }
+  if (loc && (loc.address || (loc.lat != null && loc.lng != null))) {
+    return loc;
+  }
+  return null;
+}
+
 export async function settleTrip(tripId: string): Promise<SettleTripResult> {
   // STEP 1 — Fetch trip details
   const tripResp = await axios.get(`${TRIP_SERVICE_URL}/trips/${tripId}`);
@@ -146,24 +169,45 @@ export async function settleTrip(tripId: string): Promise<SettleTripResult> {
 
     let detour_miles = 0;
     let detour_cost  = 0;
+    let rider_base_cost = shared_per_rider;
     let breakdown    = `Base share: $${shared_per_rider.toFixed(2)}`;
 
-    let loc: any = null;
-    if (booking.pickup_location) {
-      try {
-        loc = typeof booking.pickup_location === 'string'
-          ? JSON.parse(booking.pickup_location)
-          : booking.pickup_location;
-      } catch {
-        const parts = String(booking.pickup_location).split(',');
-        if (parts.length === 2) {
-          loc = { lat: parseFloat(parts[0]), lng: parseFloat(parts[1]) };
-        }
-      }
-    }
+    const pickupLoc  = parseLocation(booking.pickup_location);
+    const dropoffLoc = parseLocation(booking.dropoff_location);
 
-    if (loc && (loc.address || (loc.lat != null && loc.lng != null))) {
-      const pickupAddr = loc.address ?? `${loc.lat},${loc.lng}`;
+    if (pickupLoc && dropoffLoc) {
+      // Drop-off-aware path: bill the rider for their own pickup->dropoff leg,
+      // and price detour as the extra distance the driver covers reaching the
+      // rider's pickup plus resuming from the rider's actual dropoff to the
+      // driver's posted destination — mirrors the search-time formula instead
+      // of always routing the rider's leg all the way to the driver's destination.
+      const pickupAddr  = pickupLoc.address ?? `${pickupLoc.lat},${pickupLoc.lng}`;
+      const dropoffAddr = dropoffLoc.address ?? `${dropoffLoc.lat},${dropoffLoc.lng}`;
+      try {
+        const [legPickupResp, legRideResp, legResumeResp] = await Promise.all([
+          axios.post(`${ROUTING_SERVICE_URL}/route/calculate`, { origin: originCoord, destination: pickupAddr }),
+          axios.post(`${ROUTING_SERVICE_URL}/route/calculate`, { origin: pickupAddr, destination: dropoffAddr }),
+          axios.post(`${ROUTING_SERVICE_URL}/route/calculate`, { origin: dropoffAddr, destination: destCoord }),
+        ]);
+        const legPickupDist = legPickupResp.data?.distance_miles ?? 0;
+        const legRideDist   = legRideResp.data?.distance_miles ?? 0;
+        const legRideHours  = (legRideResp.data?.duration_seconds ?? 0) / 3600;
+        const legResumeDist = legResumeResp.data?.distance_miles ?? 0;
+
+        rider_base_cost = legRideDist * IRS_MILEAGE_RATE + legRideHours * DRIVER_HOURLY;
+        detour_miles = Math.max(0, (legPickupDist + legResumeDist) - (direct_distance_miles - legRideDist));
+        breakdown = `Ride leg: $${rider_base_cost.toFixed(2)}`;
+        if (detour_miles > 0.1) {
+          detour_cost = detour_miles * IRS_MILEAGE_RATE * DETOUR_SURCHARGE;
+          breakdown += ` + ${detour_miles.toFixed(2)} mi detour surcharge`;
+        }
+      } catch {
+        console.warn(`[settle] Routing failed for rider ${riderId} drop-off-aware detour calc`);
+      }
+    } else if (pickupLoc) {
+      // Legacy path (no dropoff_location on file): detour priced against the
+      // driver's full destination, base cost stays the even trip-cost split.
+      const pickupAddr = pickupLoc.address ?? `${pickupLoc.lat},${pickupLoc.lng}`;
       try {
         const [leg1Resp, leg2Resp] = await Promise.all([
           axios.post(`${ROUTING_SERVICE_URL}/route/calculate`, { origin: originCoord, destination: pickupAddr }),
@@ -181,8 +225,8 @@ export async function settleTrip(tripId: string): Promise<SettleTripResult> {
       }
     }
 
-    const holdAmount = booking.fare != null ? parseFloat(booking.fare) : (shared_per_rider + detour_cost);
-    const raw_amount  = (shared_per_rider + detour_cost) * seatsBooked;
+    const holdAmount = booking.fare != null ? parseFloat(booking.fare) : (rider_base_cost + detour_cost);
+    const raw_amount  = (rider_base_cost + detour_cost) * seatsBooked;
     const amount_paid = parseFloat(Math.min(raw_amount, holdAmount * seatsBooked).toFixed(2));
 
     riderSettlements.push({

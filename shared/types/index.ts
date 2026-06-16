@@ -139,6 +139,7 @@ export interface Booking {
   payment_deadline_at?: Date | string | null;
   cancellation_reason?: string | null;
   pickup_location?: { lat: number; lng: number; address?: string } | null;
+  dropoff_location?: { lat: number; lng: number; address?: string } | null;
   created_at: Date;
   updated_at: Date;
 }
@@ -270,6 +271,9 @@ export interface CreateBookingRequest {
   trip_id: string;
   seats_booked: number;
   scost_breakdown?: ScostBreakdown;
+  pickup_location?: { lat: number; lng: number; address?: string };
+  dropoff_location?: { lat: number; lng: number; address?: string };
+  fare?: number;
 }
 
 /**
