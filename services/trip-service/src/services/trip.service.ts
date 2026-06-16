@@ -1090,8 +1090,14 @@ export const searchTripsWithRerouting = async (
   // Enrich each result with detour_miles, adjusted_eta_minutes, cost_breakdown
   const enriched: EnrichedTripWithDriver[] = await Promise.all(
     page.map(async ({ trip, candidate }) => {
-      const detourMeters = haversineMeters(originLat, originLng, candidate.origin_lat, candidate.origin_lng);
-      const detourMiles = detourMeters / 1609.34;
+      const pickupDetourMeters = haversineMeters(originLat, originLng, candidate.origin_lat, candidate.origin_lng);
+      const pickupDetourMiles = pickupDetourMeters / 1609.34;
+      // Drop-off-side deviation: how far the driver must travel past the rider's
+      // destination to reach their own posted destination. Mirrors the pickup-side
+      // detour (haversine, not routed) so both sides of the trip are priced consistently.
+      const dropoffDetourMeters = haversineMeters(destinationLat, destinationLng, candidate.destination_lat, candidate.destination_lng);
+      const dropoffDetourMiles = dropoffDetourMeters / 1609.34;
+      const detourMiles = pickupDetourMiles + dropoffDetourMiles;
       const directLineMiles = haversineMeters(originLat, originLng, destinationLat, destinationLng) / 1609.34;
 
       // Two-leg ETA: driver_origin → rider_pickup + rider_pickup → destination
@@ -1099,7 +1105,7 @@ export const searchTripsWithRerouting = async (
       // so the fare and ETA are always populated with a reasonable value — never
       // omitted, never silently zeroed.
       const [leg1, leg2] = await Promise.all([
-        fetchLeg(`${candidate.origin_lat},${candidate.origin_lng}`, `${originLat},${originLng}`, detourMiles),
+        fetchLeg(`${candidate.origin_lat},${candidate.origin_lng}`, `${originLat},${originLng}`, pickupDetourMiles),
         fetchLeg(`${originLat},${originLng}`, `${destinationLat},${destinationLng}`, directLineMiles),
       ]);
 
@@ -1112,7 +1118,7 @@ export const searchTripsWithRerouting = async (
       const adjustedEtaMinutes = detourTimeMinutes + originalEtaMinutes;
 
       const durationHours       = (leg1DurationSec + leg2DurationSec) / 3600;
-      const directDistanceMiles = leg2DistanceMiles > 0 ? leg2DistanceMiles : detourMiles;
+      const directDistanceMiles = leg2DistanceMiles > 0 ? leg2DistanceMiles : directLineMiles;
       const tripCost            = parseFloat((directDistanceMiles * 0.67 + durationHours * 15.00).toFixed(2));
       const detourFee           = parseFloat((detourMiles * 0.67 * 1.25).toFixed(2));
       const perRiderSplit        = parseFloat((tripCost + detourFee).toFixed(2));

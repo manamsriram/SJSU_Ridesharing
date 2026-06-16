@@ -147,4 +147,34 @@ describe('searchTripsWithRerouting fare breakdown', () => {
     // leg2's real 900s duration must still be reflected, not blown away by leg1's failure
     expect(results[0].original_eta_minutes).toBe(15);
   });
+
+  it('includes drop-off-side deviation in detour_miles when the driver\'s posted destination differs from the rider\'s searched destination', async () => {
+    vi.mocked(axios.post).mockResolvedValue({
+      data: { duration_seconds: 600, distance_miles: 5, distance_meters: 8000 },
+    });
+
+    // Driver's posted destination (Palo Alto Caltrain) differs from the rider's
+    // searched destination (California Ave Caltrain), ~2km apart.
+    const rowWithMismatchedDestination = {
+      ...SEARCH_ROW,
+      destination_lat: 37.4432,
+      destination_lng: -122.1643,
+    };
+    queryMock.mockResolvedValue({ rows: [rowWithMismatchedDestination] });
+
+    const { searchTripsWithRerouting } = await import('../../services/trip-service/src/services/trip.service');
+
+    // Rider searches for California Ave Caltrain as the destination
+    const results = await searchTripsWithRerouting(
+      37.7749, -122.4194,
+      37.4290, -122.1428,
+      new Date(),
+    );
+
+    expect(results).toHaveLength(1);
+    // origin matches exactly (0 pickup detour), so all detour_miles comes from the
+    // ~2km drop-off mismatch between rider's destination and driver's actual destination
+    expect(results[0].detour_miles).toBeGreaterThan(1);
+    expect(results[0].cost_breakdown!.detour_fee).toBeGreaterThan(0);
+  });
 });
