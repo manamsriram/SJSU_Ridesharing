@@ -1,4 +1,5 @@
 import asyncio
+from concurrent.futures import ThreadPoolExecutor
 from fastapi import FastAPI, HTTPException
 from functools import partial
 from pydantic import BaseModel
@@ -43,6 +44,13 @@ try:
 except Exception as e:
     print(f"⚠️ Redis connection failed: {e} — caching disabled")
     redis_client = None
+
+# Dedicated executor for gmaps calls — these are I/O-bound (waiting on the Google
+# Maps API), so a generous worker count doesn't fight the pod's CPU limit. A single
+# search can fire up to ~20 concurrent route calls; the asyncio default executor
+# (min(32, cpu_count()+4)) can be starved under constrained CPU limits in GKE Autopilot.
+ROUTE_EXECUTOR_WORKERS = int(os.getenv("ROUTE_EXECUTOR_WORKERS", "32"))
+route_executor = ThreadPoolExecutor(max_workers=ROUTE_EXECUTOR_WORKERS)
 
 
 class RouteRequest(BaseModel):
@@ -177,12 +185,12 @@ async def calculate_route(request: RouteRequest):
                     "polyline": route.get("overview_polyline", {}).get("points"),
                 }
 
-            data = await loop.run_in_executor(None, _address_route)
+            data = await loop.run_in_executor(route_executor, _address_route)
             _cache_set(cache_key, data)
             return RouteResponse(**data)
 
         data = await loop.run_in_executor(
-            None, partial(calculate_route_core, o_lat, o_lng, d_lat, d_lng)
+            route_executor, partial(calculate_route_core, o_lat, o_lng, d_lat, d_lng)
         )
         _cache_set(cache_key, data)
         return RouteResponse(**data)

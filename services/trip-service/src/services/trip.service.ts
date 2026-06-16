@@ -1061,39 +1061,55 @@ export const searchTripsWithRerouting = async (
   // Apply pagination after ML ranking
   const page = scored.slice(offset, offset + limit);
 
+  // Fallback driving speed used only when routing-service is unreachable after retry —
+  // keeps the time component of the fare non-zero instead of silently underpricing.
+  const FALLBACK_AVG_SPEED_MPH = 30;
+
+  type LegResult = { durationSec: number; distanceMiles: number };
+
+  const fetchLeg = async (origin: string, destination: string, fallbackMiles: number): Promise<LegResult> => {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const res = await axios.post(`${config.routingServiceUrl}/route/calculate`, { origin, destination }, { timeout: 4000 });
+        return {
+          durationSec:   res.data?.duration_seconds ?? Math.round((fallbackMiles / FALLBACK_AVG_SPEED_MPH) * 3600),
+          distanceMiles: res.data?.distance_miles ?? fallbackMiles,
+        };
+      } catch (err) {
+        if (attempt === 1) {
+          console.warn('[searchTripsWithRerouting] routing leg failed after retry, using distance-based fallback', origin, '->', destination, err instanceof Error ? err.message : err);
+        }
+      }
+    }
+    return {
+      durationSec:   Math.round((fallbackMiles / FALLBACK_AVG_SPEED_MPH) * 3600),
+      distanceMiles: fallbackMiles,
+    };
+  };
+
   // Enrich each result with detour_miles, adjusted_eta_minutes, cost_breakdown
   const enriched: EnrichedTripWithDriver[] = await Promise.all(
     page.map(async ({ trip, candidate }) => {
       const detourMeters = haversineMeters(originLat, originLng, candidate.origin_lat, candidate.origin_lng);
       const detourMiles = detourMeters / 1609.34;
+      const directLineMiles = haversineMeters(originLat, originLng, destinationLat, destinationLng) / 1609.34;
 
-      let adjustedEtaMinutes: number | undefined;
-      let originalEtaMinutes: number | undefined;
-      let detourTimeMinutes: number | undefined;
-      let leg1DurationSec = 0;
-      let leg2DurationSec = 0;
-      let leg2DistanceMiles = 0;
-      try {
-        // Two-leg ETA: driver_origin → rider_pickup + rider_pickup → destination
-        const [leg1, leg2] = await Promise.all([
-          axios.post(`${config.routingServiceUrl}/route/calculate`, {
-            origin:      `${candidate.origin_lat},${candidate.origin_lng}`,
-            destination: `${originLat},${originLng}`,
-          }, { timeout: 4000 }),
-          axios.post(`${config.routingServiceUrl}/route/calculate`, {
-            origin:      `${originLat},${originLng}`,
-            destination: `${destinationLat},${destinationLng}`,
-          }, { timeout: 4000 }),
-        ]);
-        leg1DurationSec   = leg1.data?.duration_seconds ?? 0;
-        leg2DurationSec   = leg2.data?.duration_seconds ?? 0;
-        leg2DistanceMiles = leg2.data?.distance_miles   ?? 0;
-        detourTimeMinutes   = Math.round(leg1DurationSec / 60);
-        originalEtaMinutes  = Math.round(leg2DurationSec / 60);
-        adjustedEtaMinutes  = detourTimeMinutes + originalEtaMinutes;
-      } catch {
-        // Routing service unavailable — omit ETA
-      }
+      // Two-leg ETA: driver_origin → rider_pickup + rider_pickup → destination
+      // Each leg retries once, then falls back to a straight-line-distance estimate
+      // so the fare and ETA are always populated with a reasonable value — never
+      // omitted, never silently zeroed.
+      const [leg1, leg2] = await Promise.all([
+        fetchLeg(`${candidate.origin_lat},${candidate.origin_lng}`, `${originLat},${originLng}`, detourMiles),
+        fetchLeg(`${originLat},${originLng}`, `${destinationLat},${destinationLng}`, directLineMiles),
+      ]);
+
+      const leg1DurationSec   = leg1.durationSec;
+      const leg2DurationSec   = leg2.durationSec;
+      const leg2DistanceMiles = leg2.distanceMiles;
+
+      const detourTimeMinutes  = Math.round(leg1DurationSec / 60);
+      const originalEtaMinutes = Math.round(leg2DurationSec / 60);
+      const adjustedEtaMinutes = detourTimeMinutes + originalEtaMinutes;
 
       const durationHours       = (leg1DurationSec + leg2DurationSec) / 3600;
       const directDistanceMiles = leg2DistanceMiles > 0 ? leg2DistanceMiles : detourMiles;
