@@ -53,7 +53,7 @@ The project has a memory system at `memory/` that stores important context. When
   - `PATCH /api/bookings/:id/approve` - Driver approves booking
   - `PATCH /api/bookings/:id/reject` - Driver rejects booking
 - **Enhanced search:** Pagination with limit/offset parameters
-- **SJSU validation:** Trips must connect to SJSU (37.3352, -122.8811, ~0.5 mile radius)
+- **SJSU validation:** Trips must connect to SJSU (37.3352, -121.8811, ~0.5 mile radius)
 - **iOS Rider UI:** RiderSearchResultsView and TripDetailView for posted rides search
 - **Booking polling:** Auto-refresh booking state every 3 seconds
 

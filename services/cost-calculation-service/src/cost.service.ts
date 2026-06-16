@@ -1,8 +1,5 @@
 import axios from 'axios';
-
-const IRS_MILEAGE_RATE = 0.67;
-const DRIVER_HOURLY    = 15.00;
-const DETOUR_SURCHARGE = 1.25;
+import { IRS_MILEAGE_RATE, DRIVER_HOURLY, DETOUR_SURCHARGE, computeDetourPricing } from '@lessgo/shared';
 
 const ROUTING_SERVICE_URL = process.env.ROUTING_SERVICE_URL || 'http://127.0.0.1:8002';
 const TRIP_SERVICE_URL    = process.env.TRIP_SERVICE_URL    || 'http://127.0.0.1:3003';
@@ -194,11 +191,19 @@ export async function settleTrip(tripId: string): Promise<SettleTripResult> {
         const legRideHours  = (legRideResp.data?.duration_seconds ?? 0) / 3600;
         const legResumeDist = legResumeResp.data?.distance_miles ?? 0;
 
-        rider_base_cost = legRideDist * IRS_MILEAGE_RATE + legRideHours * DRIVER_HOURLY;
-        detour_miles = Math.max(0, (legPickupDist + legResumeDist) - (direct_distance_miles - legRideDist));
+        // Shared single-source-of-truth pricing — identical to the search-time quote.
+        const pricing = computeDetourPricing({
+          legPickupDistMiles:   legPickupDist,
+          legRideDistMiles:     legRideDist,
+          legRideDurationHours: legRideHours,
+          legResumeDistMiles:   legResumeDist,
+          directDistanceMiles:  direct_distance_miles,
+        });
+        rider_base_cost = pricing.riderBaseCost;
+        detour_miles    = pricing.detourMiles;
+        detour_cost     = pricing.detourCost;
         breakdown = `Ride leg: $${rider_base_cost.toFixed(2)}`;
-        if (detour_miles > 0.1) {
-          detour_cost = detour_miles * IRS_MILEAGE_RATE * DETOUR_SURCHARGE;
+        if (detour_cost > 0) {
           breakdown += ` + ${detour_miles.toFixed(2)} mi detour surcharge`;
         }
       } catch {

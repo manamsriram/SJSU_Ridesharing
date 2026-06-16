@@ -1,7 +1,7 @@
 import { Pool } from 'pg';
 import axios from 'axios';
 import { config } from '../config';
-import { Trip, TripWithDriver, CreateTripRequest, TripStatus, GeoPoint, AppError } from '@lessgo/shared';
+import { Trip, TripWithDriver, CreateTripRequest, TripStatus, GeoPoint, AppError, computeDetourPricing, inferTripDirection } from '@lessgo/shared';
 import { geocodeTripLocations } from '../utils/geocoding';
 import { mineFrequentRouteFromTrip } from './frequent_route.service';
 import { cacheGet, cacheSet, cacheDel } from '../utils/redisClient';
@@ -128,19 +128,25 @@ export const createTrip = async (
   // Check for overlapping trips (and exact duplicates)
   await checkTripOverlap(driverId, originPoint, destinationPoint, new Date(departure_time), origin, destination);
 
+  // Record direction (TO_SJSU / FROM_SJSU) at creation so matching never re-derives it.
+  const direction = inferTripDirection(
+    originPoint.lat, originPoint.lng,
+    destinationPoint.lat, destinationPoint.lng
+  );
+
   const query = `
     INSERT INTO trips (
       driver_id, origin, destination, origin_point, destination_point,
-      departure_time, seats_available, recurrence, status
+      departure_time, seats_available, recurrence, status, direction
     )
-    VALUES ($1, $2, $3, ST_SetSRID(ST_MakePoint($4, $5), 4326), ST_SetSRID(ST_MakePoint($6, $7), 4326), $8, $9, $10, $11)
+    VALUES ($1, $2, $3, ST_SetSRID(ST_MakePoint($4, $5), 4326), ST_SetSRID(ST_MakePoint($6, $7), 4326), $8, $9, $10, $11, $12)
     RETURNING
       trip_id, driver_id, origin, destination,
       ST_X(origin_point::geometry) as origin_lng,
       ST_Y(origin_point::geometry) as origin_lat,
       ST_X(destination_point::geometry) as destination_lng,
       ST_Y(destination_point::geometry) as destination_lat,
-      departure_time, seats_available, recurrence, status, created_at, updated_at
+      departure_time, seats_available, recurrence, status, direction, created_at, updated_at
   `;
 
   const values = [
@@ -155,6 +161,7 @@ export const createTrip = async (
     seats_available,
     recurrence || null,
     TripStatus.Pending,
+    direction,
   ];
 
   const result = await pool.query(query, values);
@@ -1024,6 +1031,7 @@ export const searchTripsWithRerouting = async (
     destination_lng:  destinationLng,
     departure_time:   departureTime,
     max_scost:        null,
+    direction:        inferTripDirection(originLat, originLng, destinationLat, destinationLng),
   };
 
   // Map TripWithDriver → CandidateTrip shape expected by matching utilities
@@ -1038,6 +1046,7 @@ export const searchTripsWithRerouting = async (
     seats_available:   t.seats_available,
     distance_to_rider_m: haversineMeters(originLat, originLng, t.origin_point.lat, t.origin_point.lng),
     route_score:       0,
+    direction:         t.direction ?? inferTripDirection(t.origin_point.lat, t.origin_point.lng, t.destination_point.lat, t.destination_point.lng),
   }));
 
   // Stage 2: embedding ranking
@@ -1090,38 +1099,44 @@ export const searchTripsWithRerouting = async (
   // Enrich each result with detour_miles, adjusted_eta_minutes, cost_breakdown
   const enriched: EnrichedTripWithDriver[] = await Promise.all(
     page.map(async ({ trip, candidate }) => {
-      const pickupDetourMeters = haversineMeters(originLat, originLng, candidate.origin_lat, candidate.origin_lng);
-      const pickupDetourMiles = pickupDetourMeters / 1609.34;
-      // Drop-off-side deviation: how far the driver must travel past the rider's
-      // destination to reach their own posted destination. Mirrors the pickup-side
-      // detour (haversine, not routed) so both sides of the trip are priced consistently.
-      const dropoffDetourMeters = haversineMeters(destinationLat, destinationLng, candidate.destination_lat, candidate.destination_lng);
-      const dropoffDetourMiles = dropoffDetourMeters / 1609.34;
-      const detourMiles = pickupDetourMiles + dropoffDetourMiles;
-      const directLineMiles = haversineMeters(originLat, originLng, destinationLat, destinationLng) / 1609.34;
+      // Haversine fallbacks (miles) for each of the four routed legs, used only
+      // when the routing service is unreachable after retry.
+      const pickupLineMiles = haversineMeters(candidate.origin_lat, candidate.origin_lng, originLat, originLng) / 1609.34;
+      const rideLineMiles   = haversineMeters(originLat, originLng, destinationLat, destinationLng) / 1609.34;
+      const resumeLineMiles = haversineMeters(destinationLat, destinationLng, candidate.destination_lat, candidate.destination_lng) / 1609.34;
+      const directLineMiles = haversineMeters(candidate.origin_lat, candidate.origin_lng, candidate.destination_lat, candidate.destination_lng) / 1609.34;
 
-      // Two-leg ETA: driver_origin → rider_pickup + rider_pickup → destination
-      // Each leg retries once, then falls back to a straight-line-distance estimate
-      // so the fare and ETA are always populated with a reasonable value — never
-      // omitted, never silently zeroed.
-      const [leg1, leg2] = await Promise.all([
-        fetchLeg(`${candidate.origin_lat},${candidate.origin_lng}`, `${originLat},${originLng}`, pickupDetourMiles),
-        fetchLeg(`${originLat},${originLng}`, `${destinationLat},${destinationLng}`, directLineMiles),
+      // Four routed legs mirroring the settlement formula (cost.service.ts) so the
+      // search quote and the settlement charge converge. Each leg retries once then
+      // falls back to its haversine estimate — the fare is never zeroed/omitted.
+      //   legPickup: driver origin → rider pickup
+      //   legRide:   rider pickup  → rider destination (the rider's own leg)
+      //   legResume: rider destination → driver destination
+      //   legDirect: driver origin → driver destination (direct, no detour)
+      const [legPickup, legRide, legResume, legDirect] = await Promise.all([
+        fetchLeg(`${candidate.origin_lat},${candidate.origin_lng}`, `${originLat},${originLng}`, pickupLineMiles),
+        fetchLeg(`${originLat},${originLng}`, `${destinationLat},${destinationLng}`, rideLineMiles),
+        fetchLeg(`${destinationLat},${destinationLng}`, `${candidate.destination_lat},${candidate.destination_lng}`, resumeLineMiles),
+        fetchLeg(`${candidate.origin_lat},${candidate.origin_lng}`, `${candidate.destination_lat},${candidate.destination_lng}`, directLineMiles),
       ]);
 
-      const leg1DurationSec   = leg1.durationSec;
-      const leg2DurationSec   = leg2.durationSec;
-      const leg2DistanceMiles = leg2.distanceMiles;
+      const legRideHours = legRide.durationSec / 3600;
+      const { riderBaseCost, detourMiles, detourCost } = computeDetourPricing({
+        legPickupDistMiles:   legPickup.distanceMiles,
+        legRideDistMiles:     legRide.distanceMiles,
+        legRideDurationHours: legRideHours,
+        legResumeDistMiles:   legResume.distanceMiles,
+        directDistanceMiles:  legDirect.distanceMiles,
+      });
 
-      const detourTimeMinutes  = Math.round(leg1DurationSec / 60);
-      const originalEtaMinutes = Math.round(leg2DurationSec / 60);
+      // ETA: time to reach the rider (pickup leg) + the rider's own ride leg.
+      const detourTimeMinutes  = Math.round(legPickup.durationSec / 60);
+      const originalEtaMinutes = Math.round(legRide.durationSec / 60);
       const adjustedEtaMinutes = detourTimeMinutes + originalEtaMinutes;
 
-      const durationHours       = (leg1DurationSec + leg2DurationSec) / 3600;
-      const directDistanceMiles = leg2DistanceMiles > 0 ? leg2DistanceMiles : directLineMiles;
-      const tripCost            = parseFloat((directDistanceMiles * 0.67 + durationHours * 15.00).toFixed(2));
-      const detourFee           = parseFloat((detourMiles * 0.67 * 1.25).toFixed(2));
-      const perRiderSplit        = parseFloat((tripCost + detourFee).toFixed(2));
+      const tripCost      = parseFloat(riderBaseCost.toFixed(2));
+      const detourFee     = parseFloat(detourCost.toFixed(2));
+      const perRiderSplit = parseFloat((riderBaseCost + detourCost).toFixed(2));
 
       return {
         ...trip,
@@ -1138,7 +1153,7 @@ export const searchTripsWithRerouting = async (
         detour_time_minutes: detourTimeMinutes,
         cost_breakdown: {
           trip_cost:       tripCost,
-          duration_hours:  parseFloat(durationHours.toFixed(4)),
+          duration_hours:  parseFloat(legRideHours.toFixed(4)),
           detour_fee:      detourFee,
           per_rider_split: perRiderSplit,
         },

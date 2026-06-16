@@ -361,7 +361,7 @@ Find matching trips for a rider
 {
   "rider_id": "uuid",
   "origin_lat": 37.3352,
-  "origin_lng": -122.8811,
+  "origin_lng": -121.8811,
   "destination_lat": 37.7749,
   "destination_lng": -122.4194,
   "departure_time": "2024-12-25T08:00:00Z",

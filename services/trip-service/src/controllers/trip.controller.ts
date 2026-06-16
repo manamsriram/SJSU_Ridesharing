@@ -2,7 +2,7 @@ import { Response } from 'express';
 import axios from 'axios';
 import { Pool } from 'pg';
 import * as tripService from '../services/trip.service';
-import { AuthRequest, AppError, successResponse, errorResponse, CreateTripRequest, SearchTripsRequest, TripStatus } from '@lessgo/shared';
+import { AuthRequest, AppError, successResponse, errorResponse, CreateTripRequest, SearchTripsRequest, TripStatus, SJSU_COORDS, SJSU_RADIUS_METERS } from '@lessgo/shared';
 import { config } from '../config';
 
 const pool = new Pool({ connectionString: config.databaseUrl });
@@ -45,23 +45,20 @@ export const createTrip = async (req: AuthRequest, res: Response): Promise<void>
 
     const tripData: CreateTripRequest = req.body;
 
-    // Validate SJSU requirement
-    const sjsuCoordinates = { lat: 37.3352, lng: -121.8811 };
-    const sjsuRadiusMeters = 800; // ~0.5 miles
-
+    // Validate SJSU requirement — shared SJSU_COORDS is the single source of truth.
     // Check if origin or destination is within SJSU radius
     const isOriginSJSU = await tripService.isLocationNearSJSU(
       tripData.origin,
-      sjsuCoordinates.lat,
-      sjsuCoordinates.lng,
-      sjsuRadiusMeters
+      SJSU_COORDS.lat,
+      SJSU_COORDS.lng,
+      SJSU_RADIUS_METERS
     );
 
     const isDestinationSJSU = await tripService.isLocationNearSJSU(
       tripData.destination,
-      sjsuCoordinates.lat,
-      sjsuCoordinates.lng,
-      sjsuRadiusMeters
+      SJSU_COORDS.lat,
+      SJSU_COORDS.lng,
+      SJSU_RADIUS_METERS
     );
 
     if (!isOriginSJSU && !isDestinationSJSU) {

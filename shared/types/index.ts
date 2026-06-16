@@ -108,6 +108,7 @@ export interface Trip {
   seats_available: number;
   recurrence?: string;
   status: TripStatus;
+  direction?: 'TO_SJSU' | 'FROM_SJSU'; // Set at creation from endpoints; null for legacy rows
   featured?: boolean;      // New field for promoting routes
   max_riders?: number;     // New field for max concurrent bookings
   pending_booking_count?: number; // Count of pending bookings for driver view

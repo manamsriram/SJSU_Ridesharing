@@ -14,6 +14,11 @@
 import { Pool } from 'pg';
 import axios from 'axios';
 import { config } from '../config';
+import { haversineMeters, inferTripDirection, TripDirection } from '@lessgo/shared';
+
+// Re-exported from @lessgo/shared so existing import sites (trip.service.ts,
+// test mocks of this module) keep resolving haversineMeters from here.
+export { haversineMeters };
 
 const pool = new Pool({ connectionString: config.databaseUrl });
 
@@ -35,22 +40,6 @@ const RHO = 0.1;
 // more than 30% extra distance per existing passenger's journey.
 const MAX_PASSENGER_DETOUR_RATIO = 0.30;
 
-// ── Haversine helper ─────────────────────────────────────────────────────────
-export function haversineMeters(
-  lat1: number, lng1: number,
-  lat2: number, lng2: number
-): number {
-  const R = 6_371_000;
-  const φ1 = (lat1 * Math.PI) / 180;
-  const φ2 = (lat2 * Math.PI) / 180;
-  const Δφ = ((lat2 - lat1) * Math.PI) / 180;
-  const Δλ = ((lng2 - lng1) * Math.PI) / 180;
-  const a =
-    Math.sin(Δφ / 2) ** 2 +
-    Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) ** 2;
-  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-}
-
 // ── Types ───────────────────────────────────────────────────────────────────
 export interface TripRequestRow {
   request_id: string;
@@ -61,6 +50,7 @@ export interface TripRequestRow {
   destination_lng: number;
   departure_time: Date;
   max_scost: number | null;  // rider-preference ceiling (He et al. §4.2); null = no gate
+  direction: TripDirection | null;  // inferred by caller from origin/destination, not stored
 }
 
 export interface CandidateTrip {
@@ -74,6 +64,7 @@ export interface CandidateTrip {
   distance_to_rider_m: number;
   seats_available: number;
   route_score: number;  // from frequent_routes (Se, defaults to 0)
+  direction: TripDirection | null;
 }
 
 // ── Stage 1: fetch PostGIS-filtered candidates ───────────────────────────────
@@ -103,7 +94,8 @@ async function fetchCandidates(req: TripRequestRow): Promise<CandidateTrip[]> {
          t.origin_point::geography,
          ${riderPoint}
        ) AS distance_to_rider_m,
-       0 AS route_score
+       0 AS route_score,
+       t.direction
      FROM trips t
      JOIN users u ON t.driver_id = u.user_id
                   AND u.available_for_rides = true
@@ -139,7 +131,8 @@ async function fetchCandidates(req: TripRequestRow): Promise<CandidateTrip[]> {
          t.origin_point::geography,
          ${riderPoint}
        ) AS distance_to_rider_m,
-       0 AS route_score
+       0 AS route_score,
+       t.direction
      FROM trips t
      JOIN users u ON t.driver_id = u.user_id
                   AND u.role = 'Driver'
@@ -154,6 +147,13 @@ async function fetchCandidates(req: TripRequestRow): Promise<CandidateTrip[]> {
              ${riderPoint},
              1500
            )
+       -- Require matching direction when both are known; fall back to destination
+       -- proximity only for legacy rows where direction wasn't recorded (NULL).
+       AND (
+             t.direction IS NULL
+             OR $5::text IS NULL
+             OR t.direction = $5
+           )
        -- Driver's destination within 8 km of rider's destination (going the same way)
        AND ST_DWithin(
              t.destination_point::geography,
@@ -162,7 +162,7 @@ async function fetchCandidates(req: TripRequestRow): Promise<CandidateTrip[]> {
            )
      ORDER BY distance_to_rider_m ASC
      LIMIT 10`,
-    [req.origin_lng, req.origin_lat, req.destination_lng, req.destination_lat]
+    [req.origin_lng, req.origin_lat, req.destination_lng, req.destination_lat, req.direction]
   );
 
   // Merge, deduplicate by trip_id
@@ -382,7 +382,13 @@ export async function matchRider(
     throw new Error(`Trip request ${requestId} not found`);
   }
   const req = reqResult.rows[0];
-  console.log(`[matching] Request origin=(${req.origin_lat},${req.origin_lng}) dest=(${req.destination_lat},${req.destination_lng}) depTime=${req.departure_time}`);
+  // trip_requests are ephemeral search params and don't store a direction column,
+  // so derive it here from the rider's endpoints before candidate selection.
+  req.direction = inferTripDirection(
+    req.origin_lat, req.origin_lng,
+    req.destination_lat, req.destination_lng
+  );
+  console.log(`[matching] Request origin=(${req.origin_lat},${req.origin_lng}) dest=(${req.destination_lat},${req.destination_lng}) depTime=${req.departure_time} direction=${req.direction}`);
 
   // Stage 1: PostGIS proximity filter
   let candidates = await fetchCandidates(req);

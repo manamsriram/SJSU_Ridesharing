@@ -49,7 +49,7 @@ const SEARCH_ROW = {
   origin_lat: 37.7749,
   origin_lng: -122.4194,
   destination_lat: 37.3352,
-  destination_lng: -122.8811,
+  destination_lng: -121.8811,
   departure_time: new Date(Date.now() + 2 * 60 * 60 * 1000),
   seats_available: 3,
   recurrence: null,
@@ -91,7 +91,7 @@ describe('searchTripsWithRerouting fare breakdown', () => {
 
     const results = await searchTripsWithRerouting(
       37.7749, -122.4194,
-      37.3352, -122.8811,
+      37.3352, -121.8811,
       new Date(),
     );
 
@@ -108,13 +108,14 @@ describe('searchTripsWithRerouting fare breakdown', () => {
 
     const results = await searchTripsWithRerouting(
       37.7749, -122.4194,
-      37.3352, -122.8811,
+      37.3352, -121.8811,
       new Date(),
     );
 
     expect(results).toHaveLength(1);
-    // each of the 2 legs is retried once, so axios.post is called 4 times total
-    expect(vi.mocked(axios.post).mock.calls.length).toBe(4);
+    // each of the 4 routed legs (pickup, ride, resume, direct) is retried once,
+    // so axios.post is called 8 times total
+    expect(vi.mocked(axios.post).mock.calls.length).toBe(8);
 
     // fare breakdown must always be present and reflect a non-zero time component,
     // computed from the haversine-distance fallback rather than left at zero
@@ -138,7 +139,7 @@ describe('searchTripsWithRerouting fare breakdown', () => {
 
     const results = await searchTripsWithRerouting(
       37.7749, -122.4194,
-      37.3352, -122.8811,
+      37.3352, -121.8811,
       new Date(),
     );
 
