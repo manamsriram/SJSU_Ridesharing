@@ -535,6 +535,32 @@ export const confirmPickup = async (req: AuthRequest, res: Response): Promise<vo
 };
 
 /**
+ * Confirm rider drop-off and freeze settlement (driver only)
+ * POST /api/bookings/:id/confirm-dropoff
+ */
+export const confirmDropoff = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const { id } = req.params;
+    if (!req.user) {
+      errorResponse(res, 'Authentication required', 401);
+      return;
+    }
+    const result = await bookingService.confirmRiderDropoff(id, req.user.userId);
+    successResponse(res, result, 'Drop-off confirmed');
+  } catch (error) {
+    if (error instanceof AppError) {
+      errorResponse(res, error.message, error.statusCode);
+      return;
+    }
+    if (error instanceof Error) {
+      errorResponse(res, error.message, 400);
+      return;
+    }
+    throw new AppError('Failed to confirm drop-off', 500);
+  }
+};
+
+/**
  * Reject a booking (driver only)
  * PATCH /api/bookings/:id/reject
  */

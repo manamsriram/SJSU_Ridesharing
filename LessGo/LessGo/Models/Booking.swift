@@ -337,8 +337,10 @@ struct BookingWithRider: Codable, Identifiable {
     let paymentConfirmedAt: Date?
     let cancellationReason: String?
     let riderPickupConfirmedAt: Date?
+    let dropoffConfirmedAt: Date?
 
     var hasConfirmedPickup: Bool { riderPickupConfirmedAt != nil }
+    var hasConfirmedDropoff: Bool { dropoffConfirmedAt != nil }
 
     init(
         id: String, tripId: String, riderId: String,
@@ -352,7 +354,8 @@ struct BookingWithRider: Codable, Identifiable {
         paymentDeadlineAt: Date? = nil,
         paymentConfirmedAt: Date? = nil,
         cancellationReason: String? = nil,
-        riderPickupConfirmedAt: Date? = nil
+        riderPickupConfirmedAt: Date? = nil,
+        dropoffConfirmedAt: Date? = nil
     ) {
         self.id = id; self.tripId = tripId; self.riderId = riderId
         self.riderName = riderName; self.riderEmail = riderEmail
@@ -366,6 +369,7 @@ struct BookingWithRider: Codable, Identifiable {
         self.paymentConfirmedAt = paymentConfirmedAt
         self.cancellationReason = cancellationReason
         self.riderPickupConfirmedAt = riderPickupConfirmedAt
+        self.dropoffConfirmedAt = dropoffConfirmedAt
     }
 
     func withBookingState(_ newState: BookingState) -> BookingWithRider {
@@ -381,7 +385,8 @@ struct BookingWithRider: Codable, Identifiable {
             paymentDeadlineAt: paymentDeadlineAt,
             paymentConfirmedAt: paymentConfirmedAt,
             cancellationReason: cancellationReason,
-            riderPickupConfirmedAt: riderPickupConfirmedAt
+            riderPickupConfirmedAt: riderPickupConfirmedAt,
+            dropoffConfirmedAt: dropoffConfirmedAt
         )
     }
 
@@ -408,6 +413,7 @@ struct BookingWithRider: Codable, Identifiable {
         case paymentConfirmedAt = "payment_confirmed_at"
         case cancellationReason = "cancellation_reason"
         case riderPickupConfirmedAt = "rider_pickup_confirmed_at"
+        case dropoffConfirmedAt = "dropoff_confirmed_at"
     }
 
     init(from decoder: Decoder) throws {
@@ -432,6 +438,7 @@ struct BookingWithRider: Codable, Identifiable {
         paymentConfirmedAt = try container.decodeIfPresent(Date.self, forKey: .paymentConfirmedAt)
         cancellationReason = try container.decodeIfPresent(String.self, forKey: .cancellationReason)
         riderPickupConfirmedAt = try container.decodeIfPresent(Date.self, forKey: .riderPickupConfirmedAt)
+        dropoffConfirmedAt = try container.decodeIfPresent(Date.self, forKey: .dropoffConfirmedAt)
         if let fareDouble = try? container.decode(Double.self, forKey: .fare) {
             fare = fareDouble
         } else if let fareString = try? container.decode(String.self, forKey: .fare), let parsed = Double(fareString) {
@@ -474,6 +481,7 @@ struct BookingWithRider: Codable, Identifiable {
         try c.encodeIfPresent(paymentDeadlineAt, forKey: .paymentDeadlineAt)
         try c.encodeIfPresent(cancellationReason, forKey: .cancellationReason)
         try c.encodeIfPresent(riderPickupConfirmedAt, forKey: .riderPickupConfirmedAt)
+        try c.encodeIfPresent(dropoffConfirmedAt, forKey: .dropoffConfirmedAt)
     }
 }
 

@@ -135,6 +135,18 @@ class BookingService {
         )
     }
 
+    // MARK: - Confirm Drop-off (Driver Only)
+
+    func confirmDropoff(bookingId: String) async throws {
+        struct ConfirmDropoffResponse: Codable {
+            let status: String
+        }
+        let _: ConfirmDropoffResponse = try await network.request(
+            endpoint: "/bookings/\(bookingId)/confirm-dropoff",
+            method: .post
+        )
+    }
+
     // MARK: - Delete Booking
 
     func deleteBooking(bookingId: String) async throws {

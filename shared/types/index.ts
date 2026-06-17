@@ -287,6 +287,7 @@ export interface ScostBreakdown {
   advance: number;  // Waiting time
   social: number;   // Route compatibility score
   total: number;    // Sum of all components
+  is_estimate?: boolean; // True if quote used haversine fallback (display metadata; settlement uses server-persisted coords)
 }
 
 /**

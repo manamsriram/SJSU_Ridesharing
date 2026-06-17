@@ -1,7 +1,7 @@
 import express, { Application, NextFunction, Request, Response } from 'express';
 import cors from 'cors';
 import { AppError, errorHandler } from '@lessgo/shared';
-import { calculateCost, settleTrip } from './cost.service';
+import { calculateCost, settleTrip, settleRider } from './cost.service';
 
 const app: Application = express();
 app.use(express.json());
@@ -43,8 +43,25 @@ app.get('/cost/settle/:trip_id', async (req: Request, res: Response, next: NextF
     if (error?.status === 404 || error?.response?.status === 404) {
       return next(new AppError(error.message ?? `Trip ${trip_id} not found`, 404));
     }
-    console.error(`[settle] Error for trip ${trip_id}:`, error?.message ?? error);
+    console.error('[settle] Error for trip %s:', trip_id, error?.message ?? error);
     res.status(500).json({ status: 'error', message: `Failed to calculate trip settlement: ${error?.message ?? 'Unknown error'}` });
+  }
+});
+
+// ── GET /cost/settle-rider/:trip_id/:booking_id ───────────────────────────────
+// Per-rider drop-off freeze: routes only this rider's legs (3-4 calls) so the
+// booking-service can freeze the result on the booking row at drop-off time.
+app.get('/cost/settle-rider/:trip_id/:booking_id', async (req: Request, res: Response, next: NextFunction) => {
+  const { trip_id, booking_id } = req.params;
+  try {
+    const result = await settleRider(trip_id, booking_id);
+    res.json({ status: 'success', message: 'Rider settlement calculated successfully', data: result });
+  } catch (error: any) {
+    if (error?.status === 404 || error?.response?.status === 404) {
+      return next(new AppError(error.message ?? `Trip ${trip_id} / booking ${booking_id} not found`, 404));
+    }
+    console.error('[settle-rider] Error for trip %s booking %s:', trip_id, booking_id, error?.message ?? error);
+    res.status(500).json({ status: 'error', message: `Failed to calculate rider settlement: ${error?.message ?? 'Unknown error'}` });
   }
 });
 

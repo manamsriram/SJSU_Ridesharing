@@ -99,6 +99,9 @@ describe('searchTripsWithRerouting fare breakdown', () => {
     expect(results[0].cost_breakdown).toBeDefined();
     expect(results[0].cost_breakdown!.duration_hours).toBeGreaterThan(0);
     expect(typeof results[0].estimated_cost).toBe('number');
+    // Fully routed quote — not an estimate.
+    expect(results[0].is_estimate).toBe(false);
+    expect(results[0].cost_breakdown!.is_estimate).toBe(false);
   });
 
   it('retries once per leg, then falls back to a distance-based estimate — never a zero-duration or missing fare', async () => {
@@ -124,6 +127,9 @@ describe('searchTripsWithRerouting fare breakdown', () => {
     expect(results[0].adjusted_eta_minutes).toBeGreaterThan(0);
     expect(typeof results[0].estimated_cost).toBe('number');
     expect(Number.isNaN(results[0].estimated_cost)).toBe(false);
+    // Every leg fell back to haversine — the quote must be flagged as an estimate.
+    expect(results[0].is_estimate).toBe(true);
+    expect(results[0].cost_breakdown!.is_estimate).toBe(true);
   });
 
   it('falls back per-leg independently — a failing leg does not blank out a succeeding one', async () => {
