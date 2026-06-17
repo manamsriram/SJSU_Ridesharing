@@ -81,6 +81,39 @@ export interface SettleTripResult {
   riders: RiderSettlement[];
 }
 
+/** Frozen leg metrics persisted on the booking row at drop-off (settled_breakdown JSONB). */
+export interface SettledBreakdown {
+  label: string;
+  direct_mi: number;
+  detour_mi: number;
+  rider_base_cost: number;
+  detour_cost: number;
+  leg_pickup_mi?: number;
+  leg_ride_mi?: number;
+  leg_ride_hr?: number;
+  leg_resume_mi?: number;
+}
+
+/** Per-rider compute result — amount_paid is the TOTAL, post-clamp value (per-seat x seats). */
+export interface RiderSettleResult {
+  rider_id: string;
+  rider_name: string;
+  amount_paid: number;
+  status: string;
+  detour_miles: number;
+  breakdown: string;
+  settled_breakdown: SettledBreakdown;
+}
+
+/** Trip-level routing/pricing context shared across every rider in a settlement. */
+interface SettleContext {
+  originCoord: string;
+  destCoord: string;
+  directDistanceMiles: number;
+  directDurationHours: number;
+  sharedPerRider: number;
+}
+
 interface ParsedLocation {
   lat?: number;
   lng?: number;
@@ -104,21 +137,18 @@ function parseLocation(raw: unknown): ParsedLocation | null {
   return null;
 }
 
-export async function settleTrip(tripId: string): Promise<SettleTripResult> {
-  // STEP 1 — Fetch trip details
+/** STEP 1 — Fetch trip; throws a 404-tagged error if missing. */
+async function fetchTripForSettle(tripId: string): Promise<any> {
   const tripResp = await axios.get(`${TRIP_SERVICE_URL}/trips/${tripId}`);
   const trip = tripResp.data?.data ?? tripResp.data;
-
   if (!trip || !trip.trip_id) {
     throw Object.assign(new Error(`Trip ${tripId} not found`), { status: 404 });
   }
+  return trip;
+}
 
-  const originCoord = (trip.origin_point?.lat != null && trip.origin_point?.lng != null)
-    ? `${trip.origin_point.lat},${trip.origin_point.lng}` : trip.origin;
-  const destCoord = (trip.destination_point?.lat != null && trip.destination_point?.lng != null)
-    ? `${trip.destination_point.lat},${trip.destination_point.lng}` : trip.destination;
-
-  // STEP 2 — Fetch bookings
+/** STEP 2 — Fetch the trip's settle-list bookings, filtered to non-terminal states. */
+async function fetchConfirmedBookings(tripId: string): Promise<any[]> {
   let bookings: any[] = [];
   try {
     const bookingsResp = await axios.get(`${BOOKING_SERVICE_URL}/bookings/trip/${tripId}/settle`);
@@ -129,16 +159,22 @@ export async function settleTrip(tripId: string): Promise<SettleTripResult> {
   } catch (err: any) {
     console.warn(`[settle] Could not fetch bookings for trip ${tripId}: ${err?.message}`);
   }
-
-  const confirmedBookings = bookings.filter(
+  return bookings.filter(
     (b: any) => !['cancelled', 'canceled', 'rejected'].includes(b.booking_state)
   );
+}
+
+/** STEP 3/4 — Route the driver's direct leg once and derive the even per-rider split. */
+async function buildSettleContext(trip: any, confirmedBookings: any[]): Promise<SettleContext> {
+  const originCoord = (trip.origin_point?.lat != null && trip.origin_point?.lng != null)
+    ? `${trip.origin_point.lat},${trip.origin_point.lng}` : trip.origin;
+  const destCoord = (trip.destination_point?.lat != null && trip.destination_point?.lng != null)
+    ? `${trip.destination_point.lat},${trip.destination_point.lng}` : trip.destination;
 
   const riderCount = confirmedBookings.reduce(
     (sum: number, b: any) => sum + (parseInt(b.seats_booked, 10) || 1), 0
   );
 
-  // STEP 3 — Direct trip distance + duration
   let direct_distance_miles = 10;
   let direct_duration_seconds = 0;
   try {
@@ -152,96 +188,166 @@ export async function settleTrip(tripId: string): Promise<SettleTripResult> {
     console.warn('[settle] Routing unavailable, using 10 mi / 0s defaults');
   }
 
-  // STEP 4 — Per-rider settlement
-  const direct_duration_hours = direct_duration_seconds / 3600;
-  const trip_cost       = direct_distance_miles * IRS_MILEAGE_RATE + direct_duration_hours * DRIVER_HOURLY;
-  const shared_per_rider = riderCount > 0 ? trip_cost / riderCount : trip_cost;
+  const directDurationHours = direct_duration_seconds / 3600;
+  const trip_cost = direct_distance_miles * IRS_MILEAGE_RATE + directDurationHours * DRIVER_HOURLY;
+  return {
+    originCoord,
+    destCoord,
+    directDistanceMiles: direct_distance_miles,
+    directDurationHours,
+    sharedPerRider: riderCount > 0 ? trip_cost / riderCount : trip_cost,
+  };
+}
+
+/** Re-hydrate a frozen settled_breakdown that may arrive as a JSON string or object. */
+function parseSettledBreakdown(raw: unknown): SettledBreakdown | null {
+  if (!raw) return null;
+  if (typeof raw === 'string') {
+    try { return JSON.parse(raw) as SettledBreakdown; } catch { return null; }
+  }
+  if (typeof raw === 'object') return raw as SettledBreakdown;
+  return null;
+}
+
+/**
+ * Compute one rider's settlement against a shared trip context.
+ * Preserves BOTH pricing paths: the drop-off-aware 3-leg path and the legacy
+ * 2-call path for bookings that predate dropoff_location (obs 2807). Returns the
+ * TOTAL, post-clamp amount_paid (per-seat fare x seats_booked).
+ */
+export async function computeRiderSettlement(
+  booking: any,
+  ctx: SettleContext,
+): Promise<RiderSettleResult> {
+  const { originCoord, destCoord, directDistanceMiles, sharedPerRider } = ctx;
+  const riderId     = booking.rider_id;
+  const riderName   = booking.rider_name ?? booking.rider?.name ?? 'Rider';
+  const seatsBooked = parseInt(booking.seats_booked, 10) || 1;
+
+  let detour_miles = 0;
+  let detour_cost  = 0;
+  let rider_base_cost = sharedPerRider;
+  let breakdown    = `Base share: $${sharedPerRider.toFixed(2)}`;
+  let legs: Partial<SettledBreakdown> = {};
+
+  const pickupLoc  = parseLocation(booking.pickup_location);
+  const dropoffLoc = parseLocation(booking.dropoff_location);
+
+  if (pickupLoc && dropoffLoc) {
+    // Drop-off-aware path: bill the rider for their own pickup->dropoff leg,
+    // and price detour as the extra distance the driver covers reaching the
+    // rider's pickup plus resuming from the rider's actual dropoff to the
+    // driver's posted destination — mirrors the search-time formula instead
+    // of always routing the rider's leg all the way to the driver's destination.
+    const pickupAddr  = pickupLoc.address ?? `${pickupLoc.lat},${pickupLoc.lng}`;
+    const dropoffAddr = dropoffLoc.address ?? `${dropoffLoc.lat},${dropoffLoc.lng}`;
+    try {
+      const [legPickupResp, legRideResp, legResumeResp] = await Promise.all([
+        axios.post(`${ROUTING_SERVICE_URL}/route/calculate`, { origin: originCoord, destination: pickupAddr }),
+        axios.post(`${ROUTING_SERVICE_URL}/route/calculate`, { origin: pickupAddr, destination: dropoffAddr }),
+        axios.post(`${ROUTING_SERVICE_URL}/route/calculate`, { origin: dropoffAddr, destination: destCoord }),
+      ]);
+      const legPickupDist = legPickupResp.data?.distance_miles ?? 0;
+      const legRideDist   = legRideResp.data?.distance_miles ?? 0;
+      const legRideHours  = (legRideResp.data?.duration_seconds ?? 0) / 3600;
+      const legResumeDist = legResumeResp.data?.distance_miles ?? 0;
+
+      // Shared single-source-of-truth pricing — identical to the search-time quote.
+      const pricing = computeDetourPricing({
+        legPickupDistMiles:   legPickupDist,
+        legRideDistMiles:     legRideDist,
+        legRideDurationHours: legRideHours,
+        legResumeDistMiles:   legResumeDist,
+        directDistanceMiles:  directDistanceMiles,
+      });
+      rider_base_cost = pricing.riderBaseCost;
+      detour_miles    = pricing.detourMiles;
+      detour_cost     = pricing.detourCost;
+      breakdown = `Ride leg: $${rider_base_cost.toFixed(2)}`;
+      if (detour_cost > 0) {
+        breakdown += ` + ${detour_miles.toFixed(2)} mi detour surcharge`;
+      }
+      legs = {
+        leg_pickup_mi: parseFloat(legPickupDist.toFixed(2)),
+        leg_ride_mi:   parseFloat(legRideDist.toFixed(2)),
+        leg_ride_hr:   parseFloat(legRideHours.toFixed(4)),
+        leg_resume_mi: parseFloat(legResumeDist.toFixed(2)),
+      };
+    } catch {
+      console.warn(`[settle] Routing failed for rider ${riderId} drop-off-aware detour calc`);
+    }
+  } else if (pickupLoc) {
+    // Legacy path (no dropoff_location on file): detour priced against the
+    // driver's full destination, base cost stays the even trip-cost split.
+    const pickupAddr = pickupLoc.address ?? `${pickupLoc.lat},${pickupLoc.lng}`;
+    try {
+      const [leg1Resp, leg2Resp] = await Promise.all([
+        axios.post(`${ROUTING_SERVICE_URL}/route/calculate`, { origin: originCoord, destination: pickupAddr }),
+        axios.post(`${ROUTING_SERVICE_URL}/route/calculate`, { origin: pickupAddr, destination: destCoord }),
+      ]);
+      const toPickupDist   = leg1Resp.data?.distance_miles ?? 0;
+      const fromPickupDist = leg2Resp.data?.distance_miles ?? 0;
+      detour_miles = Math.max(0, (toPickupDist + fromPickupDist) - directDistanceMiles);
+      if (detour_miles > 0.1) {
+        detour_cost = detour_miles * IRS_MILEAGE_RATE * DETOUR_SURCHARGE;
+        breakdown += ` + ${detour_miles.toFixed(2)} mi detour surcharge`;
+      }
+    } catch {
+      console.warn(`[settle] Routing failed for rider ${riderId} detour calc`);
+    }
+  }
+
+  const holdAmount  = booking.fare != null ? parseFloat(booking.fare) : (rider_base_cost + detour_cost);
+  const raw_amount  = (rider_base_cost + detour_cost) * seatsBooked;
+  const amount_paid = parseFloat(Math.min(raw_amount, holdAmount * seatsBooked).toFixed(2));
+
+  return {
+    rider_id:     riderId,
+    rider_name:   riderName,
+    amount_paid,
+    status:       booking.status,
+    detour_miles: parseFloat(detour_miles.toFixed(2)),
+    breakdown,
+    settled_breakdown: {
+      label:           breakdown,
+      direct_mi:       parseFloat(directDistanceMiles.toFixed(2)),
+      detour_mi:       parseFloat(detour_miles.toFixed(2)),
+      rider_base_cost: parseFloat(rider_base_cost.toFixed(2)),
+      detour_cost:     parseFloat(detour_cost.toFixed(2)),
+      ...legs,
+    },
+  };
+}
+
+export async function settleTrip(tripId: string): Promise<SettleTripResult> {
+  const trip = await fetchTripForSettle(tripId);
+  const confirmedBookings = await fetchConfirmedBookings(tripId);
+  const ctx = await buildSettleContext(trip, confirmedBookings);
+  const riderCount = confirmedBookings.reduce(
+    (sum: number, b: any) => sum + (parseInt(b.seats_booked, 10) || 1), 0
+  );
 
   const riderSettlements: RiderSettlement[] = [];
 
   for (const booking of confirmedBookings) {
-    const riderId     = booking.rider_id;
-    const riderName   = booking.rider_name ?? booking.rider?.name ?? 'Rider';
-    const seatsBooked = parseInt(booking.seats_booked, 10) || 1;
-
-    let detour_miles = 0;
-    let detour_cost  = 0;
-    let rider_base_cost = shared_per_rider;
-    let breakdown    = `Base share: $${shared_per_rider.toFixed(2)}`;
-
-    const pickupLoc  = parseLocation(booking.pickup_location);
-    const dropoffLoc = parseLocation(booking.dropoff_location);
-
-    if (pickupLoc && dropoffLoc) {
-      // Drop-off-aware path: bill the rider for their own pickup->dropoff leg,
-      // and price detour as the extra distance the driver covers reaching the
-      // rider's pickup plus resuming from the rider's actual dropoff to the
-      // driver's posted destination — mirrors the search-time formula instead
-      // of always routing the rider's leg all the way to the driver's destination.
-      const pickupAddr  = pickupLoc.address ?? `${pickupLoc.lat},${pickupLoc.lng}`;
-      const dropoffAddr = dropoffLoc.address ?? `${dropoffLoc.lat},${dropoffLoc.lng}`;
-      try {
-        const [legPickupResp, legRideResp, legResumeResp] = await Promise.all([
-          axios.post(`${ROUTING_SERVICE_URL}/route/calculate`, { origin: originCoord, destination: pickupAddr }),
-          axios.post(`${ROUTING_SERVICE_URL}/route/calculate`, { origin: pickupAddr, destination: dropoffAddr }),
-          axios.post(`${ROUTING_SERVICE_URL}/route/calculate`, { origin: dropoffAddr, destination: destCoord }),
-        ]);
-        const legPickupDist = legPickupResp.data?.distance_miles ?? 0;
-        const legRideDist   = legRideResp.data?.distance_miles ?? 0;
-        const legRideHours  = (legRideResp.data?.duration_seconds ?? 0) / 3600;
-        const legResumeDist = legResumeResp.data?.distance_miles ?? 0;
-
-        // Shared single-source-of-truth pricing — identical to the search-time quote.
-        const pricing = computeDetourPricing({
-          legPickupDistMiles:   legPickupDist,
-          legRideDistMiles:     legRideDist,
-          legRideDurationHours: legRideHours,
-          legResumeDistMiles:   legResumeDist,
-          directDistanceMiles:  direct_distance_miles,
-        });
-        rider_base_cost = pricing.riderBaseCost;
-        detour_miles    = pricing.detourMiles;
-        detour_cost     = pricing.detourCost;
-        breakdown = `Ride leg: $${rider_base_cost.toFixed(2)}`;
-        if (detour_cost > 0) {
-          breakdown += ` + ${detour_miles.toFixed(2)} mi detour surcharge`;
-        }
-      } catch {
-        console.warn(`[settle] Routing failed for rider ${riderId} drop-off-aware detour calc`);
-      }
-    } else if (pickupLoc) {
-      // Legacy path (no dropoff_location on file): detour priced against the
-      // driver's full destination, base cost stays the even trip-cost split.
-      const pickupAddr = pickupLoc.address ?? `${pickupLoc.lat},${pickupLoc.lng}`;
-      try {
-        const [leg1Resp, leg2Resp] = await Promise.all([
-          axios.post(`${ROUTING_SERVICE_URL}/route/calculate`, { origin: originCoord, destination: pickupAddr }),
-          axios.post(`${ROUTING_SERVICE_URL}/route/calculate`, { origin: pickupAddr, destination: destCoord }),
-        ]);
-        const toPickupDist   = leg1Resp.data?.distance_miles ?? 0;
-        const fromPickupDist = leg2Resp.data?.distance_miles ?? 0;
-        detour_miles = Math.max(0, (toPickupDist + fromPickupDist) - direct_distance_miles);
-        if (detour_miles > 0.1) {
-          detour_cost = detour_miles * IRS_MILEAGE_RATE * DETOUR_SURCHARGE;
-          breakdown += ` + ${detour_miles.toFixed(2)} mi detour surcharge`;
-        }
-      } catch {
-        console.warn(`[settle] Routing failed for rider ${riderId} detour calc`);
-      }
+    // Prefer the frozen row written at drop-off — zero routing calls. The frozen
+    // settled_amount is already the TOTAL, post-clamp value (per-seat x seats).
+    if (booking.settled_amount != null && booking.settled_at) {
+      const fb = parseSettledBreakdown(booking.settled_breakdown);
+      const frozenAmount = parseFloat(parseFloat(booking.settled_amount).toFixed(2));
+      riderSettlements.push({
+        rider_id:     booking.rider_id,
+        rider_name:   booking.rider_name ?? booking.rider?.name ?? 'Rider',
+        amount_paid:  frozenAmount,
+        status:       booking.status,
+        detour_miles: fb?.detour_mi ?? 0,
+        breakdown:    fb?.label ?? `Frozen at drop-off: $${frozenAmount.toFixed(2)}`,
+      });
+      continue;
     }
-
-    const holdAmount = booking.fare != null ? parseFloat(booking.fare) : (rider_base_cost + detour_cost);
-    const raw_amount  = (rider_base_cost + detour_cost) * seatsBooked;
-    const amount_paid = parseFloat(Math.min(raw_amount, holdAmount * seatsBooked).toFixed(2));
-
-    riderSettlements.push({
-      rider_id:     riderId,
-      rider_name:   riderName,
-      amount_paid,
-      status:       booking.status,
-      detour_miles: parseFloat(detour_miles.toFixed(2)),
-      breakdown,
-    });
+    // Unfrozen (drop-off not confirmed, or settlement routing failed at drop-off):
+    // compute live, exactly as the old batch path did.
+    riderSettlements.push(await computeRiderSettlement(booking, ctx));
   }
 
   const totalDriverEarnings = parseFloat(
@@ -255,13 +361,32 @@ export async function settleTrip(tripId: string): Promise<SettleTripResult> {
     total_cost:       totalDriverEarnings,
     driver_earnings:  totalDriverEarnings,
     rider_count:      riderCount > 0 ? riderCount : 1,
-    cost_per_rider:   parseFloat(shared_per_rider.toFixed(2)),
+    cost_per_rider:   parseFloat(ctx.sharedPerRider.toFixed(2)),
     breakdown: {
-      direct_distance_miles: parseFloat(direct_distance_miles.toFixed(2)),
-      direct_duration_hours: parseFloat(direct_duration_hours.toFixed(4)),
-      trip_cost:             parseFloat(trip_cost.toFixed(2)),
+      direct_distance_miles: parseFloat(ctx.directDistanceMiles.toFixed(2)),
+      direct_duration_hours: parseFloat(ctx.directDurationHours.toFixed(4)),
+      trip_cost:             parseFloat((ctx.directDistanceMiles * IRS_MILEAGE_RATE + ctx.directDurationHours * DRIVER_HOURLY).toFixed(2)),
       detour_surcharge:      DETOUR_SURCHARGE,
     },
     riders: riderSettlements,
   };
+}
+
+/**
+ * Settle ONE rider for the per-rider drop-off freeze flow. Routes only that
+ * rider's legs (plus the shared direct leg) — 3-4 routing calls instead of the
+ * batch path's 3N. Booking is located within the trip's settle-list so the even
+ * split (used by the legacy fallback path) stays correct.
+ */
+export async function settleRider(tripId: string, bookingId: string): Promise<RiderSettleResult> {
+  const trip = await fetchTripForSettle(tripId);
+  const confirmedBookings = await fetchConfirmedBookings(tripId);
+  const target = confirmedBookings.find(
+    (b: any) => b.id === bookingId || b.booking_id === bookingId
+  );
+  if (!target) {
+    throw Object.assign(new Error(`Booking ${bookingId} not settleable for trip ${tripId}`), { status: 404 });
+  }
+  const ctx = await buildSettleContext(trip, confirmedBookings);
+  return computeRiderSettlement(target, ctx);
 }

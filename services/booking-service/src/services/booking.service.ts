@@ -768,6 +768,10 @@ export const getBookingsByTripId = async (tripId: string): Promise<{ bookings: a
       b.payment_confirmed_at,
       b.cancellation_reason,
       b.rider_pickup_confirmed_at,
+      b.dropoff_confirmed_at,
+      b.settled_amount,
+      b.settled_at,
+      b.settled_breakdown,
       COALESCE(q.final_price, q.max_price) AS fare
     FROM bookings b
     JOIN users u ON b.rider_id = u.user_id
@@ -1310,6 +1314,91 @@ export const confirmRiderPickup = async (
   return result.rows[0];
 };
 
+/**
+ * Confirm a rider's drop-off (driver only) and freeze that rider's settlement.
+ *
+ * Driver-initiated (unlike pickup, which the rider triggers). Calls the cost
+ * service's per-rider settle endpoint, then freezes settled_amount / settled_at /
+ * settled_breakdown on the booking row so trip completion can sum frozen rows
+ * with zero routing. Idempotent: a repeated tap is a no-op (settled_at guard).
+ *
+ * The booking_state is deliberately NOT changed here — it must stay 'approved'
+ * so the settle-list query (getBookingsByTripId) still includes the rider and
+ * capturePayment can flip it to 'completed' at trip end.
+ *
+ * @param bookingId Booking's UUID
+ * @param driverId  Driver's UUID (must own the trip)
+ * @returns Updated booking row with frozen settlement fields
+ */
+export const confirmRiderDropoff = async (
+  bookingId: string,
+  driverId: string
+): Promise<object> => {
+  const check = await pool.query(
+    `SELECT b.booking_id, b.trip_id, b.booking_state, b.rider_pickup_confirmed_at,
+            b.settled_at, t.driver_id
+     FROM bookings b
+     JOIN trips t ON t.trip_id = b.trip_id
+     WHERE b.booking_id = $1 AND b.deleted_at IS NULL`,
+    [bookingId]
+  );
+  if (check.rowCount === 0) {
+    throw new AppError('Booking not found', 404);
+  }
+  const row = check.rows[0];
+  if (row.driver_id !== driverId) {
+    throw new AppError('Unauthorized: only the trip driver can confirm drop-off', 403);
+  }
+  if (row.booking_state !== 'approved') {
+    throw new AppError('Booking is not in an approved state', 409);
+  }
+  if (!row.rider_pickup_confirmed_at) {
+    throw new AppError('Cannot drop off a rider before pickup is confirmed', 409);
+  }
+
+  // Idempotent: if already frozen, return the current row without re-routing.
+  if (row.settled_at) {
+    const existing = await pool.query(
+      `SELECT booking_id, trip_id, rider_id, booking_state, dropoff_confirmed_at,
+              settled_amount, settled_at, settled_breakdown
+       FROM bookings WHERE booking_id = $1`,
+      [bookingId]
+    );
+    return existing.rows[0];
+  }
+
+  // Route this rider only. On failure, still mark dropoff_confirmed_at and leave
+  // settled_at NULL so the trip-end batch settlement prices the rider as a fallback.
+  let settled_amount: number | null = null;
+  let settled_breakdown: unknown = null;
+  try {
+    const resp = await axios.get(
+      `${config.costServiceUrl}/cost/settle-rider/${row.trip_id}/${bookingId}`
+    );
+    const data = resp.data?.data ?? resp.data;
+    if (data && data.amount_paid != null) {
+      settled_amount = parseFloat(data.amount_paid);
+      settled_breakdown = data.settled_breakdown ?? null;
+    }
+  } catch (err: any) {
+    console.warn('[dropoff] settle-rider failed for booking %s; deferring to batch:', bookingId, err?.message ?? err);
+  }
+
+  const result = await pool.query(
+    `UPDATE bookings
+     SET dropoff_confirmed_at = COALESCE(dropoff_confirmed_at, NOW()),
+         settled_amount       = CASE WHEN settled_at IS NULL THEN $2 ELSE settled_amount END,
+         settled_breakdown    = CASE WHEN settled_at IS NULL THEN $3::jsonb ELSE settled_breakdown END,
+         settled_at           = CASE WHEN settled_at IS NULL AND $2 IS NOT NULL THEN NOW() ELSE settled_at END,
+         updated_at           = current_timestamp
+     WHERE booking_id = $1
+     RETURNING booking_id, trip_id, rider_id, booking_state, dropoff_confirmed_at,
+               settled_amount, settled_at, settled_breakdown`,
+    [bookingId, settled_amount, settled_breakdown != null ? JSON.stringify(settled_breakdown) : null]
+  );
+  return result.rows[0];
+};
+
 export default {
   createBooking,
   getBookingById,
@@ -1328,4 +1417,5 @@ export default {
   cancelPaymentIntent,
   writeFinalPrice,
   confirmRiderPickup,
+  confirmRiderDropoff,
 };

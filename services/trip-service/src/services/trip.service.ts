@@ -983,6 +983,9 @@ export interface CostBreakdown {
   duration_hours:  number;
   detour_fee:      number;
   per_rider_split: number;
+  // True when one or more routed legs fell back to a haversine estimate because
+  // the routing service was unreachable — the quote may differ from the final fare.
+  is_estimate:     boolean;
 }
 
 export interface EnrichedTripWithDriver extends TripWithDriver {
@@ -993,6 +996,8 @@ export interface EnrichedTripWithDriver extends TripWithDriver {
   original_eta_minutes?: number;
   detour_time_minutes?: number;
   cost_breakdown?: CostBreakdown;
+  // Mirrors cost_breakdown.is_estimate at the top level for easy iOS consumption.
+  is_estimate?: boolean;
 }
 
 export const searchTripsWithRerouting = async (
@@ -1074,15 +1079,18 @@ export const searchTripsWithRerouting = async (
   // keeps the time component of the fare non-zero instead of silently underpricing.
   const FALLBACK_AVG_SPEED_MPH = 30;
 
-  type LegResult = { durationSec: number; distanceMiles: number };
+  type LegResult = { durationSec: number; distanceMiles: number; estimated: boolean };
 
   const fetchLeg = async (origin: string, destination: string, fallbackMiles: number): Promise<LegResult> => {
     for (let attempt = 0; attempt < 2; attempt++) {
       try {
         const res = await axios.post(`${config.routingServiceUrl}/route/calculate`, { origin, destination }, { timeout: 4000 });
+        const routedMiles = res.data?.distance_miles;
         return {
           durationSec:   res.data?.duration_seconds ?? Math.round((fallbackMiles / FALLBACK_AVG_SPEED_MPH) * 3600),
-          distanceMiles: res.data?.distance_miles ?? fallbackMiles,
+          distanceMiles: routedMiles ?? fallbackMiles,
+          // A 200 response missing distance still means we used the haversine fallback.
+          estimated:     routedMiles == null,
         };
       } catch (err) {
         if (attempt === 1) {
@@ -1093,6 +1101,7 @@ export const searchTripsWithRerouting = async (
     return {
       durationSec:   Math.round((fallbackMiles / FALLBACK_AVG_SPEED_MPH) * 3600),
       distanceMiles: fallbackMiles,
+      estimated:     true,
     };
   };
 
@@ -1119,6 +1128,9 @@ export const searchTripsWithRerouting = async (
         fetchLeg(`${destinationLat},${destinationLng}`, `${candidate.destination_lat},${candidate.destination_lng}`, resumeLineMiles),
         fetchLeg(`${candidate.origin_lat},${candidate.origin_lng}`, `${candidate.destination_lat},${candidate.destination_lng}`, directLineMiles),
       ]);
+
+      // Any leg that fell back to haversine makes the whole quote an estimate.
+      const isEstimate = legPickup.estimated || legRide.estimated || legResume.estimated || legDirect.estimated;
 
       const legRideHours = legRide.durationSec / 3600;
       const { riderBaseCost, detourMiles, detourCost } = computeDetourPricing({
@@ -1151,11 +1163,13 @@ export const searchTripsWithRerouting = async (
         adjusted_eta_minutes: adjustedEtaMinutes,
         original_eta_minutes: originalEtaMinutes,
         detour_time_minutes: detourTimeMinutes,
+        is_estimate: isEstimate,
         cost_breakdown: {
           trip_cost:       tripCost,
           duration_hours:  parseFloat(legRideHours.toFixed(4)),
           detour_fee:      detourFee,
           per_rider_split: perRiderSplit,
+          is_estimate:     isEstimate,
         },
       };
     })

@@ -210,4 +210,149 @@ describe('services/cost-calculation-service > GET /cost/settle/:trip_id', () => 
     expect(res.status).toBe(200);
     expect(res.body.data.breakdown.direct_distance_miles).toBe(10);
   });
+
+  it('prefers the frozen settled_amount row and routes ZERO per-rider legs', async () => {
+    const tripData = {
+      trip_id: 'trip-frozen', driver_id: 'driver-001', origin: 'A', destination: 'D',
+      origin_point: { lat: 37.3352, lng: -121.8811 },
+      destination_point: { lat: 37.30, lng: -121.90 },
+    };
+    const bookingsData = [
+      {
+        rider_id: 'rider-a', rider_name: 'Alice', seats_booked: 1, booking_state: 'approved', fare: 10,
+        status: 'approved',
+        settled_amount: '4.19',
+        settled_at: '2026-06-16T20:00:00Z',
+        settled_breakdown: JSON.stringify({ label: 'Ride leg: $3.35', direct_mi: 10, detour_mi: 1, rider_base_cost: 3.35, detour_cost: 0.84 }),
+      },
+    ];
+
+    axiosGet
+      .mockResolvedValueOnce({ data: { data: tripData } })
+      .mockResolvedValueOnce({ data: { data: { bookings: bookingsData } } });
+    // Only the shared direct route (buildSettleContext) should be routed — no per-rider legs.
+    axiosPost.mockResolvedValueOnce({ data: { distance_miles: 10, duration_seconds: 0 } });
+
+    const { default: app } = await import('../../services/cost-calculation-service/src/app');
+    const server = await startTestServer(app);
+    closeServer = server.close;
+
+    const res = await requestJson<{
+      status: string;
+      data: { riders: Array<{ rider_id: string; amount_paid: number; detour_miles: number; breakdown: string }> };
+    }>({ baseUrl: server.baseUrl, method: 'GET', path: '/cost/settle/trip-frozen' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.riders[0].amount_paid).toBe(4.19);
+    expect(res.body.data.riders[0].detour_miles).toBe(1);
+    expect(res.body.data.riders[0].breakdown).toBe('Ride leg: $3.35');
+    // Exactly one POST: the shared direct route. The frozen rider triggers no routing.
+    expect(axiosPost).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('services/cost-calculation-service > GET /cost/settle-rider/:trip_id/:booking_id', () => {
+  it('returns 404 when the booking is not in the trip settle-list', async () => {
+    const tripData = { trip_id: 'trip-x', driver_id: 'd1', origin: 'A', destination: 'B' };
+    axiosGet
+      .mockResolvedValueOnce({ data: { data: tripData } })
+      .mockResolvedValueOnce({ data: { data: { bookings: [] } } });
+
+    const { default: app } = await import('../../services/cost-calculation-service/src/app');
+    const server = await startTestServer(app);
+    closeServer = server.close;
+
+    const res = await requestJson<{ status: string; message: string }>({
+      baseUrl: server.baseUrl, method: 'GET', path: '/cost/settle-rider/trip-x/missing-booking',
+    });
+
+    expect(res.status).toBe(404);
+    expect(res.body.status).toBe('error');
+    expect(res.body.message).toContain('missing-booking');
+  });
+
+  it('routes only the target rider drop-off legs and returns the frozen breakdown', async () => {
+    const tripData = {
+      trip_id: 'trip-pr', driver_id: 'driver-001', origin: 'A', destination: 'D',
+      origin_point: { lat: 37.3352, lng: -121.8811 },
+      destination_point: { lat: 37.30, lng: -121.90 },
+    };
+    const bookingsData = [
+      {
+        id: 'bk-1', rider_id: 'rider-a', rider_name: 'Alice', seats_booked: 1,
+        booking_state: 'approved', status: 'approved', fare: 10,
+        pickup_location: { lat: 37.34, lng: -121.88, address: 'P' },
+        dropoff_location: { lat: 37.31, lng: -121.89, address: 'Q' },
+      },
+    ];
+
+    axiosGet
+      .mockResolvedValueOnce({ data: { data: tripData } })
+      .mockResolvedValueOnce({ data: { data: { bookings: bookingsData } } });
+    // POST 1: direct (buildSettleContext). POST 2-4: pickup/ride/resume legs.
+    axiosPost
+      .mockResolvedValueOnce({ data: { distance_miles: 10, duration_seconds: 0 } })
+      .mockResolvedValueOnce({ data: { distance_miles: 1, duration_seconds: 0 } })
+      .mockResolvedValueOnce({ data: { distance_miles: 5, duration_seconds: 0 } })
+      .mockResolvedValueOnce({ data: { distance_miles: 5, duration_seconds: 0 } });
+
+    const { default: app } = await import('../../services/cost-calculation-service/src/app');
+    const server = await startTestServer(app);
+    closeServer = server.close;
+
+    const res = await requestJson<{
+      status: string;
+      data: { rider_id: string; amount_paid: number; detour_miles: number; settled_breakdown: { detour_mi: number; rider_base_cost: number } };
+    }>({ baseUrl: server.baseUrl, method: 'GET', path: '/cost/settle-rider/trip-pr/bk-1' });
+
+    // ride leg 5mi * 0.67 = 3.35 base; detour (1+5+5)-10 = 1mi -> 1*0.67*1.25 = 0.8375; total 4.19
+    expect(res.status).toBe(200);
+    expect(res.body.data.rider_id).toBe('rider-a');
+    expect(res.body.data.amount_paid).toBe(4.19);
+    expect(res.body.data.detour_miles).toBe(1);
+    expect(res.body.data.settled_breakdown.detour_mi).toBe(1);
+    expect(res.body.data.settled_breakdown.rider_base_cost).toBe(3.35);
+    // 2 trip-service GETs + exactly 4 routing POSTs (no 3N batch).
+    expect(axiosPost).toHaveBeenCalledTimes(4);
+  });
+
+  it('multiplies per-seat fare by seats_booked exactly once for multi-seat bookings', async () => {
+    const tripData = {
+      trip_id: 'trip-seats', driver_id: 'driver-001', origin: 'A', destination: 'D',
+      origin_point: { lat: 37.3352, lng: -121.8811 },
+      destination_point: { lat: 37.30, lng: -121.90 },
+    };
+    const bookingsData = [
+      {
+        id: 'bk-2', rider_id: 'rider-b', rider_name: 'Bob', seats_booked: 2,
+        booking_state: 'approved', status: 'approved', fare: 10,
+        pickup_location: { lat: 37.34, lng: -121.88, address: 'P' },
+        dropoff_location: { lat: 37.31, lng: -121.89, address: 'Q' },
+      },
+    ];
+
+    axiosGet
+      .mockResolvedValueOnce({ data: { data: tripData } })
+      .mockResolvedValueOnce({ data: { data: { bookings: bookingsData } } });
+    // direct=10; legs pickup=0, ride=10, resume=0 -> detour 0, base = 10*0.67 = 6.70/seat.
+    axiosPost
+      .mockResolvedValueOnce({ data: { distance_miles: 10, duration_seconds: 0 } })
+      .mockResolvedValueOnce({ data: { distance_miles: 0, duration_seconds: 0 } })
+      .mockResolvedValueOnce({ data: { distance_miles: 10, duration_seconds: 0 } })
+      .mockResolvedValueOnce({ data: { distance_miles: 0, duration_seconds: 0 } });
+
+    const { default: app } = await import('../../services/cost-calculation-service/src/app');
+    const server = await startTestServer(app);
+    closeServer = server.close;
+
+    const res = await requestJson<{
+      status: string;
+      data: { amount_paid: number; detour_miles: number };
+    }>({ baseUrl: server.baseUrl, method: 'GET', path: '/cost/settle-rider/trip-seats/bk-2' });
+
+    // per-seat 6.70 * 2 seats = 13.40 (clamped under hold 10*2=20). A double-multiply bug would yield 26.80.
+    expect(res.status).toBe(200);
+    expect(res.body.data.detour_miles).toBe(0);
+    expect(res.body.data.amount_paid).toBe(13.4);
+  });
 });

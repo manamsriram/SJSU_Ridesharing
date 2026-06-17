@@ -21,6 +21,7 @@ struct ActiveTripView: View {
     @State private var tripStatus: TripStatus
     @State private var showChat = false
     @State private var isUpdatingState = false
+    @State private var droppingOffBookingId: String?
     @State private var errorMessage: String?
     @State private var showError = false
     @State private var unreadCount = 0
@@ -753,8 +754,49 @@ struct ActiveTripView: View {
                     }
                 }
             case .inProgress:
-                PrimaryButton(title: "Complete Trip", icon: "checkmark.circle.fill", isEnabled: !isUpdatingState) {
-                    Task { await updateState(to: .completed) }
+                VStack(spacing: 10) {
+                    let droppable = allPassengers.filter { $0.hasConfirmedPickup }
+                    if !droppable.isEmpty {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("Drop off riders")
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundColor(.textSecondary)
+                            ForEach(droppable, id: \.id) { passenger in
+                                HStack(spacing: 8) {
+                                    Image(systemName: passenger.hasConfirmedDropoff ? "checkmark.circle.fill" : "figure.wave")
+                                        .foregroundColor(passenger.hasConfirmedDropoff ? .brandGreen : .brandGold)
+                                        .font(.system(size: 14))
+                                    Text(passenger.riderName)
+                                        .font(.system(size: 14))
+                                        .foregroundColor(.textPrimary)
+                                    Spacer()
+                                    if passenger.hasConfirmedDropoff {
+                                        Text("Dropped off")
+                                            .font(.system(size: 12, weight: .semibold))
+                                            .foregroundColor(.brandGreen)
+                                    } else {
+                                        Button(action: {
+                                            Task { await confirmRiderDropoff(for: passenger) }
+                                        }) {
+                                            Text(droppingOffBookingId == passenger.id ? "..." : "Drop off")
+                                                .font(.system(size: 13, weight: .semibold))
+                                                .foregroundColor(.white)
+                                                .padding(.horizontal, 14)
+                                                .padding(.vertical, 6)
+                                                .background(Color.brand)
+                                                .cornerRadius(8)
+                                        }
+                                        .disabled(droppingOffBookingId != nil)
+                                    }
+                                }
+                            }
+                        }
+                        .padding(.horizontal, 4)
+                        .padding(.bottom, 4)
+                    }
+                    PrimaryButton(title: "Complete Trip", icon: "checkmark.circle.fill", isEnabled: !isUpdatingState) {
+                        Task { await updateState(to: .completed) }
+                    }
                 }
             case .completed:
                 Button(action: { showPostRideSummary = true }) {
@@ -2137,6 +2179,26 @@ struct ActiveTripView: View {
             }
         } catch {
             print("Passenger location poll error: \(error)")
+        }
+    }
+
+    // Driver confirms drop-off for a single rider. The backend routes only this
+    // rider's legs and freezes the settled price on the booking row (per-rider freeze).
+    private func confirmRiderDropoff(for passenger: BookingWithRider) async {
+        await MainActor.run { droppingOffBookingId = passenger.id }
+        do {
+            try await BookingService.shared.confirmDropoff(bookingId: passenger.id)
+            let refreshed = try await tripService.getTripPassengers(tripId: trip.id)
+            await MainActor.run {
+                allPassengers = refreshed.filter { $0.paymentConfirmedAt != nil }
+                droppingOffBookingId = nil
+            }
+        } catch {
+            await MainActor.run {
+                errorMessage = "Failed to confirm drop-off: \(error.localizedDescription)"
+                showError = true
+                droppingOffBookingId = nil
+            }
         }
     }
 

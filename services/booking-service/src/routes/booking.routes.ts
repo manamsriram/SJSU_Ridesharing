@@ -64,6 +64,8 @@ router.put('/:id/cancel', authenticateToken, asyncHandler(bookingController.canc
 
 router.post('/:id/confirm-pickup', authenticateToken, asyncHandler(bookingController.confirmPickup));
 
+router.post('/:id/confirm-dropoff', authenticateToken, asyncHandler(bookingController.confirmDropoff));
+
 router.patch('/:id/approve', authenticateToken, asyncHandler(bookingController.approveBooking));
 
 router.patch('/:id/reject', authenticateToken, asyncHandler(bookingController.rejectBooking));
