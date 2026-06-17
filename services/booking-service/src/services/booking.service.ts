@@ -118,7 +118,7 @@ export const createBooking = async (
     }
 
     // Compute hold expiry: MIN(NOW() + 2h, departure_time - 1h)
-    const holdExpiresAt = `LEAST(NOW() + INTERVAL '2 hours', $8::timestamptz - INTERVAL '1 hour')`;
+    const holdExpiresAt = `LEAST(NOW() + INTERVAL '2 hours', $9::timestamptz - INTERVAL '1 hour')`;
 
     // Create booking (store pickup/dropoff_location if provided for detour-aware settlement)
     const bookingQuery = `
