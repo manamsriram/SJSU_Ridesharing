@@ -47,20 +47,20 @@ rider_final_amount = rider_frozen_quote - rider_savings
 
 **Backend Services:**
 
-1. **booking-service** (`services/booking/src/services/booking-service.ts`)
+1. **booking-service** (`services/booking-service/src/services/booking-service.ts`)
    - Add function `applyMultiRiderDiscounts(tripId)` called when driver confirms all riders
    - Calculates actual route distance, redistributes savings
    - Updates all confirmed bookings with discount amounts
 
-2. **trip-service** (`services/trip/src/services/trip.service.ts`)
+2. **trip-service** (`services/trip-service/src/services/trip.service.ts`)
    - Extend `getTripPassengers()` to return frozen quote amounts
    - Add `calculateOptimizedRouteDistance(trip, riders)` to call Google Maps Directions API with waypoints
 
-3. **settlement-service** (`services/settlement/src/services/settlement.service.ts`)
+3. **cost-calculation-service** (`services/cost-calculation-service/src/services/settlement.service.ts`)
    - Modify `settleRider()` to use `discounted_settlement_amount` if discount applied
    - Log original amount vs final amount for transparency
 
-4. **booking-controller** (`services/booking/src/controllers/booking.controller.ts`)
+4. **booking-controller** (`services/booking-service/src/controllers/booking.controller.ts`)
    - Add endpoint `PATCH /api/bookings/trip/:tripId/apply-discounts` (driver confirmation)
    - Calls `applyMultiRiderDiscounts()` when all riders confirmed
 
@@ -115,13 +115,13 @@ settleRider()
 ## Files to Create/Modify
 
 **New:**
-- `services/booking/src/utils/discount-calculator.ts` — Discount logic
+- `services/booking-service/src/utils/discount-calculator.ts` — Discount logic
 
 **Modified:**
-- `services/booking/src/services/booking-service.ts`
-- `services/trip/src/services/trip.service.ts`
-- `services/settlement/src/services/settlement.service.ts`
-- `services/booking/src/controllers/booking.controller.ts`
+- `services/booking-service/src/services/booking-service.ts`
+- `services/trip-service/src/services/trip.service.ts`
+- `services/cost-calculation-service/src/services/settlement.service.ts`
+- `services/booking-service/src/controllers/booking.controller.ts`
 - Database migrations (add discount columns)
 - Tests for discount calculation
 

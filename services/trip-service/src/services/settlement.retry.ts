@@ -30,7 +30,8 @@ async function runRetry(): Promise<void> {
       const settlement = settlementRes.data.data;
 
       // Fetch bookings for capture
-      const bookingsRes = await axios.get(`${config.bookingServiceUrl}/bookings/trip/${row.trip_id}/settle`);
+      const bookingsRes = await axios.get(`${config.bookingServiceUrl}/bookings/trip/${row.trip_id}/settle`,
+        { headers: internalServiceHeaders('trip-service') });
       const raw = bookingsRes.data?.data ?? bookingsRes.data;
       const bookings: any[] = Array.isArray(raw) ? raw : Array.isArray(raw?.bookings) ? raw.bookings : [];
 

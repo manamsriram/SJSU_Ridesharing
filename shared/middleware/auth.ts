@@ -10,6 +10,11 @@ const INTERNAL_SERVICE_HEADER = 'x-internal-service';
 
 /** Constant-time string compare; false on length mismatch (never throws). */
 const safeEqual = (a: string, b: string): boolean => {
+  // Buffer.from() uses UTF-8 encoding by default. This comparison is correct
+  // for typical shared secrets (hex strings, base64, alphanumeric tokens).
+  // Multi-byte UTF-8 characters (e.g. emoji) can produce different byte lengths
+  // for strings of equal character length, causing a false length mismatch.
+  // Keep INTERNAL_SERVICE_TOKEN to ASCII-safe characters.
   const bufA = Buffer.from(a);
   const bufB = Buffer.from(b);
   if (bufA.length !== bufB.length) return false;
@@ -64,7 +69,11 @@ export const requireInternalService = (
 export const internalServiceHeaders = (serviceName: string): Record<string, string> => {
   const headers: Record<string, string> = { [INTERNAL_SERVICE_HEADER]: serviceName };
   const token = getSecretValue('INTERNAL_SERVICE_TOKEN');
-  if (token) headers[INTERNAL_TOKEN_HEADER] = token;
+  if (!token) {
+    console.warn('[internalServiceHeaders] INTERNAL_SERVICE_TOKEN not set — outbound request will lack auth token');
+  } else {
+    headers[INTERNAL_TOKEN_HEADER] = token;
+  }
   return headers;
 };
 

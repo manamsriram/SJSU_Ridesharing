@@ -467,7 +467,8 @@ export const updateTripState = async (req: AuthRequest, res: Response): Promise<
 
         // Fetch bookings once — used for both final-price write-back and capture
         const bookingsForSettle: any[] = await axios.get(
-          `${config.bookingServiceUrl}/bookings/trip/${id}/settle`
+          `${config.bookingServiceUrl}/bookings/trip/${id}/settle`,
+          { headers: internalServiceHeaders('trip-service') }
         ).then(r => {
           const raw = r.data?.data ?? r.data;
           return Array.isArray(raw) ? raw : Array.isArray(raw?.bookings) ? raw.bookings : [];
@@ -960,7 +961,8 @@ export const retrySettlement = async (req: AuthRequest, res: Response): Promise<
   const settlementRes = await axios.get(`${config.costServiceUrl}/cost/settle/${id}`);
   const settlement = settlementRes.data.data;
 
-  const bookingsRes = await axios.get(`${config.bookingServiceUrl}/bookings/trip/${id}/settle`);
+  const bookingsRes = await axios.get(`${config.bookingServiceUrl}/bookings/trip/${id}/settle`,
+    { headers: internalServiceHeaders('trip-service') });
   const raw = bookingsRes.data?.data ?? bookingsRes.data;
   const bookings: any[] = Array.isArray(raw) ? raw : Array.isArray(raw?.bookings) ? raw.bookings : [];
 
