@@ -326,9 +326,15 @@ struct TripDetailView: View {
                 riderAnchor = c.coordinate
                 mapDest     = AppConstants.sjsuCoordinate
             case .fromSJSU:
-                mapOrigin   = AppConstants.sjsuCoordinate
-                riderAnchor = AppConstants.sjsuCoordinate  // pickup = SJSU, no detour leg
-                mapDest     = c.coordinate
+                if let dlat = trip.destinationLat, let dlng = trip.destinationLng {
+                    mapOrigin   = AppConstants.sjsuCoordinate
+                    riderAnchor = c.coordinate  // rider's home = dropoff detour waypoint
+                    mapDest     = CLLocationCoordinate2D(latitude: dlat, longitude: dlng)
+                } else {
+                    mapOrigin   = AppConstants.sjsuCoordinate
+                    riderAnchor = nil
+                    mapDest     = c.coordinate
+                }
             }
         } else {
             mapOrigin   = driverOrigin
@@ -343,7 +349,9 @@ struct TripDetailView: View {
             case .toSJSU:
                 return [AnchorPoint(lat: anchor.latitude, lng: anchor.longitude, type: .pickup, riderId: nil, label: nil, etaOffsetSeconds: nil)]
             case .fromSJSU:
-                return []
+                return [AnchorPoint(lat: anchor.latitude, lng: anchor.longitude,
+                                    type: .dropoff, riderId: nil, label: nil,
+                                    etaOffsetSeconds: nil)]
             }
         }()
 

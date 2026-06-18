@@ -18,6 +18,8 @@ struct TripWithDriver: Identifiable, Codable {
     let status: String
     let originLat: Double?
     let originLng: Double?
+    let destinationLat: Double?
+    let destinationLng: Double?
     let detourMiles: Double?
     let adjustedEtaMinutes: Int?
     let originalEtaMinutes: Int?
@@ -52,6 +54,8 @@ struct TripWithDriver: Identifiable, Codable {
         case featured, status
         case originLat = "origin_lat"
         case originLng = "origin_lng"
+        case destinationLat = "destination_lat"
+        case destinationLng = "destination_lng"
         case detourMiles = "detour_miles"
         case adjustedEtaMinutes = "adjusted_eta_minutes"
         case originalEtaMinutes = "original_eta_minutes"
@@ -75,6 +79,8 @@ struct TripWithDriver: Identifiable, Codable {
         status: String,
         originLat: Double? = nil,
         originLng: Double? = nil,
+        destinationLat: Double? = nil,
+        destinationLng: Double? = nil,
         detourMiles: Double? = nil,
         adjustedEtaMinutes: Int? = nil,
         originalEtaMinutes: Int? = nil,
@@ -96,6 +102,8 @@ struct TripWithDriver: Identifiable, Codable {
         self.status = status
         self.originLat = originLat
         self.originLng = originLng
+        self.destinationLat = destinationLat
+        self.destinationLng = destinationLng
         self.detourMiles = detourMiles
         self.adjustedEtaMinutes = adjustedEtaMinutes
         self.originalEtaMinutes = originalEtaMinutes
@@ -138,6 +146,8 @@ struct TripWithDriver: Identifiable, Codable {
 
         originLat = try container.decodeIfPresent(Double.self, forKey: .originLat)
         originLng = try container.decodeIfPresent(Double.self, forKey: .originLng)
+        destinationLat = try container.decodeIfPresent(Double.self, forKey: .destinationLat)
+        destinationLng = try container.decodeIfPresent(Double.self, forKey: .destinationLng)
         detourMiles = try container.decodeIfPresent(Double.self, forKey: .detourMiles)
         adjustedEtaMinutes = try container.decodeIfPresent(Int.self, forKey: .adjustedEtaMinutes)
         originalEtaMinutes = try container.decodeIfPresent(Int.self, forKey: .originalEtaMinutes)

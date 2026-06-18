@@ -391,6 +391,20 @@ struct ActiveTripView: View {
                     let label = settlement != nil ? "Total Earnings" : "Est. Earnings"
                     summaryRow(label, String(format: "$%.2f", earnings), valueColor: .brandGreen, bold: true)
                 }
+                if let riders = settlement?.riders, !riders.isEmpty {
+                    let byId = Dictionary(paidPassengers.map { ($0.riderId, $0) }, uniquingKeysWith: { a, _ in a })
+                    Divider()
+                    ForEach(riders, id: \.riderId) { r in
+                        summaryRow(r.riderName, String(format: "$%.2f", r.amountPaid),
+                                   valueColor: .brandGreen, bold: false)
+                        if r.detourMiles > 0.05 {
+                            summaryRow("  Detour", String(format: "%.1f mi", r.detourMiles))
+                        }
+                        if let addr = byId[r.riderId]?.dropoffLocation?.address {
+                            summaryRow("  Drop-off", addr)
+                        }
+                    }
+                }
             } else {
                 if let booking {
                     summaryRow("Seats", "\(booking.seatsBooked)")
@@ -1313,6 +1327,14 @@ struct ActiveTripView: View {
                 coordinate: pair.coordinate,
                 type: .pickup(riderName: pair.passenger.riderName)
             ))
+            if let loc = pair.passenger.dropoffLocation {
+                let dropCoord = CLLocationCoordinate2D(latitude: loc.lat, longitude: loc.lng)
+                stops.append(SimulationRouteStop(
+                    name: "Drop-off: \(pair.passenger.riderName)",
+                    coordinate: dropCoord,
+                    type: .dropoff(riderName: pair.passenger.riderName)
+                ))
+            }
         }
 
         stops.append(SimulationRouteStop(name: "Destination: \(trip.destination)", coordinate: dropoff, type: .destination))
@@ -1861,19 +1883,45 @@ struct ActiveTripView: View {
         }
     }
 
+    private var driverAllStops: [(icon: String, color: Color, badge: String?, name: String, address: String?, time: Date?)] {
+        let byName = Dictionary(paidPassengers.map { ($0.riderName, $0) }, uniquingKeysWith: { a, _ in a })
+        return simulationRouteStops.indices.compactMap { i in
+            let stop = simulationRouteStops[i]
+            let time: Date? = stopArrivalTimes.indices.contains(i) ? stopArrivalTimes[i] : nil
+            switch stop.type {
+            case .pickup(let name):
+                let addr = byName[name]?.pickupLocation?.address
+                    ?? byName[name]?.pickupLocation.map { String(format: "%.4f, %.4f", $0.lat, $0.lng) }
+                return ("", Color.brandTeal, "P", name, addr, time)
+            case .dropoff(let name):
+                let addr = byName[name]?.dropoffLocation?.address
+                    ?? byName[name]?.dropoffLocation.map { String(format: "%.4f, %.4f", $0.lat, $0.lng) }
+                return ("", Color.orange, "D", name, addr, time)
+            default: return nil
+            }
+        }
+    }
+
     @ViewBuilder
     private var driverStopTimeline: some View {
-        let pickupStops = driverPickupStops
         let originTime: Date? = isSimulationMode ? stopArrivalTimes.first ?? nil : trip.startedAt
         let destTime: Date? = isSimulationMode ? stopArrivalTimes.last ?? nil : trip.completedAt
 
         stopTimelineRow(iconName: "circle.fill", iconColor: .brand, iconBadge: nil,
                         title: trip.origin, subtitle: nil, time: originTime, isLast: false)
 
-        ForEach(Array(pickupStops.enumerated()), id: \.offset) { i, stop in
-            stopTimelineRow(iconName: "", iconColor: .brandTeal, iconBadge: "\(i + 1)",
-                            title: stop.name, subtitle: stop.address, time: stop.time,
-                            isLast: false)
+        if isSimulationMode {
+            ForEach(Array(driverAllStops.enumerated()), id: \.offset) { _, stop in
+                stopTimelineRow(iconName: stop.icon, iconColor: stop.color, iconBadge: stop.badge,
+                                title: stop.name, subtitle: stop.address, time: stop.time,
+                                isLast: false)
+            }
+        } else {
+            ForEach(Array(driverPickupStops.enumerated()), id: \.offset) { i, stop in
+                stopTimelineRow(iconName: "", iconColor: .brandTeal, iconBadge: "\(i + 1)",
+                                title: stop.name, subtitle: stop.address, time: stop.time,
+                                isLast: false)
+            }
         }
 
         stopTimelineRow(iconName: "flag.fill", iconColor: .brandGreen, iconBadge: nil,
@@ -2426,6 +2474,7 @@ private struct SimulationRouteStop {
     enum StopType {
         case driverStart
         case pickup(riderName: String)
+        case dropoff(riderName: String)
         case destination
     }
 }

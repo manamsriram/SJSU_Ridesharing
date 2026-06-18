@@ -988,6 +988,8 @@ export interface CostBreakdown {
 export interface EnrichedTripWithDriver extends TripWithDriver {
   origin_lat?: number;
   origin_lng?: number;
+  destination_lat?: number;
+  destination_lng?: number;
   detour_miles?: number;
   adjusted_eta_minutes?: number;
   original_eta_minutes?: number;
@@ -1147,6 +1149,8 @@ export const searchTripsWithRerouting = async (
         estimated_cost: perRiderSplit,
         origin_lat: candidate.origin_lat,
         origin_lng: candidate.origin_lng,
+        destination_lat: candidate.destination_lat,
+        destination_lng: candidate.destination_lng,
         detour_miles: parseFloat(detourMiles.toFixed(2)),
         adjusted_eta_minutes: adjustedEtaMinutes,
         original_eta_minutes: originalEtaMinutes,

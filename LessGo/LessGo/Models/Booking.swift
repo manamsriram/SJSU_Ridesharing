@@ -327,6 +327,7 @@ struct BookingWithRider: Codable, Identifiable {
     let status: BookingStatus
     let bookingState: BookingState
     let pickupLocation: PickupLocation?
+    let dropoffLocation: PickupLocation?
     let createdAt: Date
     let holdExpiresAt: Date?
     let scostBreakdown: ScostBreakdown?
@@ -345,7 +346,7 @@ struct BookingWithRider: Codable, Identifiable {
         riderPhone: String?, riderRating: Double,
         riderPicture: String?, seatsBooked: Int,
         status: BookingStatus, bookingState: BookingState,
-        pickupLocation: PickupLocation?, createdAt: Date,
+        pickupLocation: PickupLocation?, dropoffLocation: PickupLocation?, createdAt: Date,
         holdExpiresAt: Date?, scostBreakdown: ScostBreakdown?,
         fare: Double?, paymentIntentId: String?,
         paymentDeadlineAt: Date? = nil,
@@ -358,7 +359,7 @@ struct BookingWithRider: Codable, Identifiable {
         self.riderPhone = riderPhone; self.riderRating = riderRating
         self.riderPicture = riderPicture; self.seatsBooked = seatsBooked
         self.status = status; self.bookingState = bookingState
-        self.pickupLocation = pickupLocation; self.createdAt = createdAt
+        self.pickupLocation = pickupLocation; self.dropoffLocation = dropoffLocation; self.createdAt = createdAt
         self.holdExpiresAt = holdExpiresAt; self.scostBreakdown = scostBreakdown
         self.fare = fare; self.paymentIntentId = paymentIntentId
         self.paymentDeadlineAt = paymentDeadlineAt
@@ -374,7 +375,7 @@ struct BookingWithRider: Codable, Identifiable {
             riderPhone: riderPhone, riderRating: riderRating,
             riderPicture: riderPicture, seatsBooked: seatsBooked,
             status: status, bookingState: newState,
-            pickupLocation: pickupLocation, createdAt: createdAt,
+            pickupLocation: pickupLocation, dropoffLocation: dropoffLocation, createdAt: createdAt,
             holdExpiresAt: holdExpiresAt, scostBreakdown: scostBreakdown,
             fare: fare, paymentIntentId: paymentIntentId,
             paymentDeadlineAt: paymentDeadlineAt,
@@ -397,6 +398,7 @@ struct BookingWithRider: Codable, Identifiable {
         case status
         case bookingState = "booking_state"
         case pickupLocation = "pickup_location"
+        case dropoffLocation = "dropoff_location"
         case createdAt = "created_at"
         case holdExpiresAt = "hold_expires_at"
         case scostBreakdown = "scost_breakdown"
@@ -421,6 +423,7 @@ struct BookingWithRider: Codable, Identifiable {
         status = try container.decode(BookingStatus.self, forKey: .status)
         bookingState = try container.decodeIfPresent(BookingState.self, forKey: .bookingState) ?? .pending
         pickupLocation = try container.decodeIfPresent(PickupLocation.self, forKey: .pickupLocation)
+        dropoffLocation = try container.decodeIfPresent(PickupLocation.self, forKey: .dropoffLocation)
         createdAt = try container.decode(Date.self, forKey: .createdAt)
         holdExpiresAt = try container.decodeIfPresent(Date.self, forKey: .holdExpiresAt)
         scostBreakdown = try container.decodeIfPresent(ScostBreakdown.self, forKey: .scostBreakdown)
@@ -462,6 +465,7 @@ struct BookingWithRider: Codable, Identifiable {
         try c.encode(status, forKey: .status)
         try c.encode(bookingState, forKey: .bookingState)
         try c.encodeIfPresent(pickupLocation, forKey: .pickupLocation)
+        try c.encodeIfPresent(dropoffLocation, forKey: .dropoffLocation)
         try c.encode(createdAt, forKey: .createdAt)
         try c.encodeIfPresent(holdExpiresAt, forKey: .holdExpiresAt)
         try c.encodeIfPresent(scostBreakdown, forKey: .scostBreakdown)

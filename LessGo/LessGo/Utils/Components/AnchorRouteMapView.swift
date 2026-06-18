@@ -91,7 +91,10 @@ struct AnchorRouteMapView: UIViewRepresentable {
         private var routeOverlays: [MKOverlay] = []
         private var frequentRouteOverlays: [MKOverlay] = []
         private var simulationPathOverlay: MKPolyline?
-        private var lastAnchorKey: String = ""
+        private var lastRequestedKey: String = ""   // set immediately — prevents re-entry
+        private var pendingBatchKey: String = ""    // matched in callbacks to discard stale
+        private var pendingBatchOverlays: [MKOverlay] = []
+        private var pendingBatchRemaining: Int = 0
         private var lastFrequentRouteKey: String = ""
         private var lastSimPathKey: String = ""
         private var pendingDirections: [MKDirections] = []
@@ -195,38 +198,46 @@ struct AnchorRouteMapView: UIViewRepresentable {
                 .map { "\($0.latitude.rounded(toPlaces: 4)),\($0.longitude.rounded(toPlaces: 4))" }
                 .joined(separator: "|")
 
-            guard key != lastAnchorKey else { return }
-            lastAnchorKey = key
+            guard key != lastRequestedKey else { return }
+            lastRequestedKey = key  // guard re-entry immediately; do NOT move to callback
 
-            // Cancel pending direction requests
+            // Cancel in-flight requests; old overlays stay until new batch lands
             pendingDirections.forEach { $0.cancel() }
             pendingDirections = []
 
-            // Remove existing overlays
-            mapView.removeOverlays(routeOverlays)
-            routeOverlays = []
-
             guard waypoints.count >= 2 else { return }
 
-            // If no anchor points, do a single directions request origin→destination
+            // If no anchor points, single origin→destination request
             if anchors.isEmpty {
                 if let o = origin, let d = destination {
-                    requestSegment(from: o, to: d, isDashed: false, mapView: mapView)
+                    pendingBatchKey = key
+                    pendingBatchOverlays = []
+                    pendingBatchRemaining = 1
+                    requestSegment(from: o, to: d, isDashed: false, mapView: mapView, batchKey: key)
                 }
                 return
             }
 
-            // Request directions for each consecutive pair
-            for i in 0..<(waypoints.count - 1) {
-                let fromAnchorIdx = i - 1   // -1 for origin offset
+            // Set up batch tracking before firing all segment requests
+            let segmentCount = waypoints.count - 1
+            pendingBatchKey = key
+            pendingBatchOverlays = []
+            pendingBatchRemaining = segmentCount
+
+            for i in 0..<segmentCount {
+                let fromAnchorIdx = i - 1
                 let toAnchorIdx   = i
-                let isDashed = fromAnchorIdx >= 0 && toAnchorIdx < anchors.count &&
-                               (anchors[max(0, fromAnchorIdx)].type == .pickup)
+                let comingFromPickup = fromAnchorIdx >= 0 && fromAnchorIdx < anchors.count &&
+                                      anchors[fromAnchorIdx].type == .pickup
+                let goingToDropoff   = toAnchorIdx >= 0 && toAnchorIdx < anchors.count &&
+                                      anchors[toAnchorIdx].type == .dropoff
+                let isDashed = comingFromPickup || goingToDropoff
                 requestSegment(
                     from: waypoints[i],
                     to: waypoints[i + 1],
                     isDashed: isDashed,
-                    mapView: mapView
+                    mapView: mapView,
+                    batchKey: key
                 )
             }
         }
@@ -235,7 +246,8 @@ struct AnchorRouteMapView: UIViewRepresentable {
             from: CLLocationCoordinate2D,
             to: CLLocationCoordinate2D,
             isDashed: Bool,
-            mapView: MKMapView
+            mapView: MKMapView,
+            batchKey: String
         ) {
             let request = MKDirections.Request()
             request.source      = MKMapItem(placemark: MKPlacemark(coordinate: from))
@@ -249,27 +261,30 @@ struct AnchorRouteMapView: UIViewRepresentable {
             directions.calculate { [weak self] response, error in
                 guard let self else { return }
                 DispatchQueue.main.async {
+                    guard batchKey == self.pendingBatchKey else { return }
+                    let overlay: MKOverlay
                     if let route = response?.routes.first {
                         if isDashed {
-                            let dashed = DashedPolyline(points: route.polyline.points(), count: route.polyline.pointCount)
-                            mapView.addOverlay(dashed)
-                            self.routeOverlays.append(dashed)
+                            overlay = DashedPolyline(points: route.polyline.points(), count: route.polyline.pointCount)
                         } else {
-                            mapView.addOverlay(route.polyline)
-                            self.routeOverlays.append(route.polyline)
+                            overlay = route.polyline
                         }
                     } else {
-                        // Geodesic fallback
                         var coords = [from, to]
                         if isDashed {
-                            let dashed = DashedPolyline(coordinates: &coords, count: 2)
-                            mapView.addOverlay(dashed)
-                            self.routeOverlays.append(dashed)
+                            overlay = DashedPolyline(coordinates: &coords, count: 2)
                         } else {
-                            let geo = MKGeodesicPolyline(coordinates: &coords, count: 2)
-                            mapView.addOverlay(geo)
-                            self.routeOverlays.append(geo)
+                            overlay = MKGeodesicPolyline(coordinates: &coords, count: 2)
                         }
+                    }
+                    self.pendingBatchOverlays.append(overlay)
+                    self.pendingBatchRemaining -= 1
+                    if self.pendingBatchRemaining <= 0 {
+                        // Atomic swap — old route stays until full new batch is ready
+                        mapView.removeOverlays(self.routeOverlays)
+                        self.routeOverlays = self.pendingBatchOverlays
+                        self.pendingBatchOverlays.forEach { mapView.addOverlay($0) }
+                        self.pendingBatchOverlays = []
                     }
                 }
             }

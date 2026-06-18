@@ -436,16 +436,16 @@ struct TripSettlement: Codable {
 }
 
 struct SettlementBreakdown: Codable {
-    let basePrice: Double
     let directDistanceMiles: Double
-    let fuelPricePerGal: Double
-    let detourMultiplier: Double
+    let directDurationHours: Double
+    let tripCost: Double
+    let detourSurcharge: Double
 
     enum CodingKeys: String, CodingKey {
-        case basePrice = "base_price"
         case directDistanceMiles = "direct_distance_miles"
-        case fuelPricePerGal = "fuel_price_per_gal"
-        case detourMultiplier = "detour_multiplier"
+        case directDurationHours = "direct_duration_hours"
+        case tripCost            = "trip_cost"
+        case detourSurcharge     = "detour_surcharge"
     }
 }
 
