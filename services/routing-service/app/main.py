@@ -281,16 +281,16 @@ async def optimize_route(request: OptimizeRequest):
         return OptimizeResponse(**data)
     except (ValueError, RuntimeError) as e:
         if "not configured" in str(e):
-            raise HTTPException(status_code=503, detail=str(e))
-        raise HTTPException(status_code=400, detail=str(e))
+            raise HTTPException(status_code=503, detail=str(e)) from e
+        raise HTTPException(status_code=400, detail=str(e)) from e
     except googlemaps.exceptions.ApiError as e:
         logger.error(f"Google Maps API error optimizing route: {e}")
-        raise HTTPException(status_code=502, detail=f"Google Maps API error: {str(e)}")
+        raise HTTPException(status_code=502, detail=f"Google Maps API error: {e!s}") from e
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Route optimization error: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to optimize route")
+        raise HTTPException(status_code=500, detail="Failed to optimize route") from e
 
 
 if __name__ == "__main__":

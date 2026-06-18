@@ -80,11 +80,10 @@ app.get('/cost/freeze/:trip_id', async (req: Request, res: Response, next: NextF
     }
     if (error?.status === 502) {
       // Optimized route unavailable — caller must defer and retry, never freeze undiscounted.
-      res.status(502).json({ status: 'error', message: error.message });
-      return;
+      return next(new AppError('Optimized route unavailable; retry later', 502));
     }
     console.error('[freeze] Error for trip %s:', trip_id, error?.message ?? error);
-    res.status(500).json({ status: 'error', message: `Failed to freeze trip settlement: ${error?.message ?? 'Unknown error'}` });
+    return next(new AppError('Failed to freeze trip settlement', 500));
   }
 });
 

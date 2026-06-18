@@ -129,9 +129,16 @@ router.post(
   '/trip/:tripId/freeze-settlements',
   requireInternalService,
   asyncHandler(async (req: express.Request, res: express.Response) => {
+    const { tripId } = req.params;
     const { riders } = req.body;
     if (!Array.isArray(riders)) {
       res.status(400).json({ status: 'error', message: 'riders array is required' });
+      return;
+    }
+    const tripBookingIds = await bookingService.getBookingIdsByTripId(tripId);
+    const invalid = (riders as Array<{ booking_id?: string }>).filter(r => !tripBookingIds.has(r.booking_id ?? ''));
+    if (invalid.length > 0) {
+      res.status(400).json({ status: 'error', message: 'One or more booking IDs do not belong to this trip' });
       return;
     }
     const result = await bookingService.freezeBookingSettlements(riders);

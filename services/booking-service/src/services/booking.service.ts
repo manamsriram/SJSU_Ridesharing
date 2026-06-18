@@ -1414,6 +1414,15 @@ export const confirmRiderDropoff = async (
  * @param riders Per-rider frozen amounts from the cost service
  * @returns Count of rows actually frozen by this call
  */
+/** Returns the set of booking_ids that belong to a given trip. */
+export const getBookingIdsByTripId = async (tripId: string): Promise<Set<string>> => {
+  const { rows } = await pool.query<{ booking_id: string }>(
+    `SELECT booking_id FROM bookings WHERE trip_id = $1`,
+    [tripId]
+  );
+  return new Set(rows.map(r => r.booking_id));
+};
+
 export const freezeBookingSettlements = async (
   riders: Array<{ booking_id: string; settled_amount: number; settled_breakdown?: unknown }>
 ): Promise<{ frozen: number }> => {
@@ -1458,5 +1467,6 @@ export default {
   writeFinalPrice,
   confirmRiderPickup,
   confirmRiderDropoff,
+  getBookingIdsByTripId,
   freezeBookingSettlements,
 };

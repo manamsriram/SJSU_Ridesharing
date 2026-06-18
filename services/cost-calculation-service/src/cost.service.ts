@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { IRS_MILEAGE_RATE, DRIVER_HOURLY, DETOUR_SURCHARGE, computeDetourPricing } from '@lessgo/shared';
+import { IRS_MILEAGE_RATE, DRIVER_HOURLY, DETOUR_SURCHARGE, computeDetourPricing, AppError } from '@lessgo/shared';
 
 const ROUTING_SERVICE_URL = process.env.ROUTING_SERVICE_URL || 'http://127.0.0.1:8002';
 const TRIP_SERVICE_URL    = process.env.TRIP_SERVICE_URL    || 'http://127.0.0.1:3003';
@@ -445,8 +445,14 @@ export async function freezeTripSettlement(tripId: string): Promise<FreezeTripRe
   for (const { booking } of base) {
     const p = parseLocation(booking.pickup_location);
     const d = parseLocation(booking.dropoff_location);
-    if (p) waypoints.push(p.address ?? `${p.lat},${p.lng}`);
-    if (d) waypoints.push(d.address ?? `${d.lat},${d.lng}`);
+    if (!p || !d) {
+      throw new AppError(
+        `Could not parse pickup/dropoff location for booking ${booking.booking_id}`,
+        422
+      );
+    }
+    waypoints.push(p.address ?? `${p.lat},${p.lng}`);
+    waypoints.push(d.address ?? `${d.lat},${d.lng}`);
   }
 
   // 3. Optimized multi-stop distance — only worth computing with >=2 riders and
@@ -459,7 +465,29 @@ export async function freezeTripSettlement(tripId: string): Promise<FreezeTripRe
         destination: ctx.destCoord,
         waypoints,
       });
-      optimizedRouteMi = optResp.data?.distance_miles ?? 0;
+      const distMi = optResp.data?.distance_miles;
+      if (typeof distMi !== 'number' || !isFinite(distMi)) {
+        throw Object.assign(
+          new Error(`Optimizer returned invalid distance_miles for trip ${tripId}`),
+          { status: 502 }
+        );
+      }
+      // Validate pickup-before-dropoff ordering in the returned waypoint order.
+      const returnedOrder: number[] | undefined = optResp.data?.waypoint_order;
+      if (Array.isArray(returnedOrder)) {
+        // waypoints array is [p0,d0, p1,d1, ...]; pickup index i*2, dropoff i*2+1.
+        for (let i = 0; i < base.length; i++) {
+          const pickupPos  = returnedOrder.indexOf(i * 2);
+          const dropoffPos = returnedOrder.indexOf(i * 2 + 1);
+          if (pickupPos === -1 || dropoffPos === -1 || pickupPos >= dropoffPos) {
+            throw Object.assign(
+              new Error(`Optimizer violated pickup-before-dropoff constraint for rider ${i} on trip ${tripId}`),
+              { status: 502 }
+            );
+          }
+        }
+      }
+      optimizedRouteMi = distMi;
     } catch (err: any) {
       throw Object.assign(
         new Error(`Optimized route unavailable for trip ${tripId}: ${err?.message ?? 'routing error'}`),

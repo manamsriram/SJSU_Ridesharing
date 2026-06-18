@@ -18,7 +18,7 @@ const INTERVAL_MS = 5 * 60 * 1000; // every 5 minutes, same cadence as the prune
  */
 export async function freezeTripNow(tripId: string): Promise<{ frozen: number; optimized_route_mi: number; total_savings: number }> {
   // Optimized-route discount for the (now final) rider list. 502 => defer.
-  const freezeResp = await axios.get(`${config.costServiceUrl}/cost/freeze/${tripId}`);
+  const freezeResp = await axios.get(`${config.costServiceUrl}/cost/freeze/${tripId}`, { timeout: 30_000 });
   const data = freezeResp.data?.data ?? freezeResp.data;
   const riders: any[] = Array.isArray(data?.riders) ? data.riders : [];
 
@@ -34,7 +34,7 @@ export async function freezeTripNow(tripId: string): Promise<{ frozen: number; o
           settled_breakdown: r.settled_breakdown,
         })),
       },
-      { headers: internalServiceHeaders('trip-service') }
+      { headers: internalServiceHeaders('trip-service'), timeout: 30_000 }
     );
     frozen = writeResp.data?.data?.frozen ?? 0;
   }
@@ -63,7 +63,13 @@ export async function freezeTripNow(tripId: string): Promise<{ frozen: number; o
  * retried on the next tick — never frozen at an undiscounted amount.
  */
 export function startDiscountFreezeJob(): void {
-  setInterval(runFreezeSweep, INTERVAL_MS);
+  const scheduleNext = () => {
+    setTimeout(async () => {
+      await runFreezeSweep();
+      scheduleNext();
+    }, INTERVAL_MS);
+  };
+  scheduleNext();
   console.log('[DISCOUNT_FREEZE] Freeze job started (every 5 min)');
 }
 
