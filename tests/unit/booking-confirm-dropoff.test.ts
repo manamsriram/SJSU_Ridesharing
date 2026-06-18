@@ -82,7 +82,7 @@ describe('booking-service > confirmRiderDropoff', () => {
     const svc = await loadService();
     const result = await svc.confirmRiderDropoff('bk-1', 'driver-1') as any;
 
-    expect(axiosMocks.get).toHaveBeenCalledWith('http://cost-test/cost/settle-rider/trip-1/bk-1');
+    expect(axiosMocks.get).toHaveBeenCalledWith('http://cost-test/cost/settle-rider/trip-1/bk-1', { timeout: 10000 });
     // booking_state untouched (stays 'approved' so capturePayment still settles at trip end).
     expect(result.booking_state).toBe('approved');
     // UPDATE invoked with the frozen amount; no booking_state column set in the UPDATE.
