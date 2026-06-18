@@ -2188,6 +2188,15 @@ struct ActiveTripView: View {
         await MainActor.run { droppingOffBookingId = passenger.id }
         do {
             try await BookingService.shared.confirmDropoff(bookingId: passenger.id)
+        } catch {
+            await MainActor.run {
+                errorMessage = "Failed to confirm drop-off: \(error.localizedDescription)"
+                showError = true
+                droppingOffBookingId = nil
+            }
+            return
+        }
+        do {
             let refreshed = try await tripService.getTripPassengers(tripId: trip.id)
             await MainActor.run {
                 allPassengers = refreshed.filter { $0.paymentConfirmedAt != nil }
@@ -2195,7 +2204,7 @@ struct ActiveTripView: View {
             }
         } catch {
             await MainActor.run {
-                errorMessage = "Failed to confirm drop-off: \(error.localizedDescription)"
+                errorMessage = "Drop-off confirmed but failed to refresh passenger list: \(error.localizedDescription)"
                 showError = true
                 droppingOffBookingId = nil
             }
