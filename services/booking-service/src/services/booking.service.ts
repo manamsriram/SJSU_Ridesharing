@@ -1374,7 +1374,8 @@ export const confirmRiderDropoff = async (
   let settled_breakdown: unknown = null;
   try {
     const resp = await axios.get(
-      `${config.costServiceUrl}/cost/settle-rider/${row.trip_id}/${bookingId}`
+      `${config.costServiceUrl}/cost/settle-rider/${row.trip_id}/${bookingId}`,
+      { timeout: 10000 }
     );
     const data = resp.data?.data ?? resp.data;
     if (data && data.amount_paid != null) {

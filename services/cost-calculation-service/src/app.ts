@@ -61,7 +61,7 @@ app.get('/cost/settle-rider/:trip_id/:booking_id', async (req: Request, res: Res
       return next(new AppError(error.message ?? `Trip ${trip_id} / booking ${booking_id} not found`, 404));
     }
     console.error('[settle-rider] Error for trip %s booking %s:', trip_id, booking_id, error?.message ?? error);
-    res.status(500).json({ status: 'error', message: `Failed to calculate rider settlement: ${error?.message ?? 'Unknown error'}` });
+    return next(new AppError('Failed to calculate rider settlement', 500));
   }
 });
 
