@@ -142,7 +142,7 @@ async function fetchTripForSettle(tripId: string): Promise<any> {
   const tripResp = await axios.get(`${TRIP_SERVICE_URL}/trips/${tripId}`);
   const trip = tripResp.data?.data ?? tripResp.data;
   if (!trip || !trip.trip_id) {
-    throw Object.assign(new Error(`Trip ${tripId} not found`), { status: 404 });
+    throw new AppError(`Trip ${tripId} not found`, 404);
   }
   return trip;
 }
@@ -150,15 +150,11 @@ async function fetchTripForSettle(tripId: string): Promise<any> {
 /** STEP 2 — Fetch the trip's settle-list bookings, filtered to non-terminal states. */
 async function fetchConfirmedBookings(tripId: string): Promise<any[]> {
   let bookings: any[] = [];
-  try {
-    const bookingsResp = await axios.get(`${BOOKING_SERVICE_URL}/bookings/trip/${tripId}/settle`);
-    const raw = bookingsResp.data?.data ?? bookingsResp.data;
-    bookings = Array.isArray(raw) ? raw
-             : Array.isArray(raw?.bookings) ? raw.bookings
-             : [];
-  } catch (err: any) {
-    console.warn(`[settle] Could not fetch bookings for trip ${tripId}: ${err?.message}`);
-  }
+  const bookingsResp = await axios.get(`${BOOKING_SERVICE_URL}/bookings/trip/${tripId}/settle`);
+  const raw = bookingsResp.data?.data ?? bookingsResp.data;
+  bookings = Array.isArray(raw) ? raw
+           : Array.isArray(raw?.bookings) ? raw.bookings
+           : [];
   return bookings.filter(
     (b: any) => !['cancelled', 'canceled', 'rejected'].includes(b.booking_state)
   );
@@ -385,7 +381,7 @@ export async function settleRider(tripId: string, bookingId: string): Promise<Ri
     (b: any) => b.id === bookingId || b.booking_id === bookingId
   );
   if (!target) {
-    throw Object.assign(new Error(`Booking ${bookingId} not settleable for trip ${tripId}`), { status: 404 });
+    throw new AppError(`Booking ${bookingId} not settleable for trip ${tripId}`, 404);
   }
   const ctx = await buildSettleContext(trip, confirmedBookings);
   return computeRiderSettlement(target, ctx);
