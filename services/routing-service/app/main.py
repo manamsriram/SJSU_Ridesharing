@@ -65,6 +65,20 @@ class RouteResponse(BaseModel):
     polyline: Optional[str] = None
 
 
+class OptimizeRequest(BaseModel):
+    origin: str
+    destination: str
+    waypoints: list[str]
+
+
+class OptimizeResponse(BaseModel):
+    distance_meters: int
+    distance_miles: float
+    duration_seconds: int
+    waypoint_order: list[int]
+    polyline: Optional[str] = None
+
+
 def get_cache_key(origin: str, destination: str) -> str:
     key_str = f"route:{origin}:{destination}".lower()
     return hashlib.md5(key_str.encode()).hexdigest()
@@ -207,6 +221,76 @@ async def calculate_route(request: RouteRequest):
     except Exception as e:
         logger.error(f"Route calculation error: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to calculate route")
+
+
+def _optimize_core(origin: str, destination: str, waypoints: list) -> dict:
+    """
+    Optimized multi-stop route using Google Maps Directions with
+    optimize_waypoints. Blocking — always call via run_in_executor.
+    Google reorders the intermediate stops for the shortest total route and
+    returns waypoint_order (indices into the original waypoints list).
+    """
+    if not gmaps:
+        raise RuntimeError("Google Maps API not configured")
+    if not waypoints:
+        raise ValueError("waypoints required")
+
+    result = gmaps.directions(
+        origin=origin,
+        destination=destination,
+        waypoints=waypoints,
+        optimize_waypoints=True,
+        mode="driving",
+        units="metric",
+    )
+    if not result:
+        raise ValueError("Route not found")
+
+    route = result[0]
+    legs = route["legs"]
+    distance_meters = sum(leg["distance"]["value"] for leg in legs)
+    duration_seconds = sum(leg["duration"]["value"] for leg in legs)
+
+    return {
+        "distance_meters": distance_meters,
+        "distance_miles": round(distance_meters * 0.000621371, 2),
+        "duration_seconds": duration_seconds,
+        "waypoint_order": route.get("waypoint_order", []),
+        "polyline": route.get("overview_polyline", {}).get("points"),
+    }
+
+
+@app.post("/route/optimize", response_model=OptimizeResponse)
+async def optimize_route(request: OptimizeRequest):
+    """
+    Optimized multi-stop route distance/duration for the T-1h discount freeze.
+    Google reorders the supplied waypoints (rider pickups/dropoffs) to minimize
+    total driving distance. Not cached — waypoint sets are per-trip and unique.
+    """
+    loop = asyncio.get_event_loop()
+    try:
+        data = await loop.run_in_executor(
+            route_executor,
+            partial(
+                _optimize_core,
+                request.origin.strip(),
+                request.destination.strip(),
+                [w.strip() for w in request.waypoints],
+            ),
+        )
+        return OptimizeResponse(**data)
+    except (ValueError, RuntimeError) as e:
+        if "not configured" in str(e):
+            raise HTTPException(status_code=503, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e))
+    except googlemaps.exceptions.ApiError as e:
+        logger.error(f"Google Maps API error optimizing route: {e}")
+        raise HTTPException(status_code=502, detail=f"Google Maps API error: {str(e)}")
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Route optimization error: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to optimize route")
 
 
 if __name__ == "__main__":

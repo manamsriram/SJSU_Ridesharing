@@ -1,7 +1,7 @@
 import express, { type Request, type Response, type NextFunction } from 'express';
 import * as tripController from '../controllers/trip.controller';
 import * as matchingController from '../controllers/matching.controller';
-import { authenticateToken, requireDriver, requireVerifiedStudent, asyncHandler } from '@lessgo/shared';
+import { authenticateToken, requireDriver, requireVerifiedStudent, requireInternalService, asyncHandler } from '@lessgo/shared';
 import { body, validationResult } from 'express-validator';
 
 const router = express.Router();
@@ -116,23 +116,13 @@ router.get('/request/:id', authenticateToken, asyncHandler(matchingController.ge
  */
 router.post(
   '/internal/process-deadline-cancellations',
-  (req: any, res: any, next: any) => {
-    if (!req.headers['x-internal-service']) {
-      return res.status(403).json({ status: 'error', message: 'Forbidden' });
-    }
-    return next();
-  },
+  requireInternalService,
   asyncHandler(tripController.processDeadlineCancellations)
 );
 
 router.post(
   '/release-expired-holds',
-  (req: express.Request, res: express.Response, next: express.NextFunction) => {
-    if (req.headers['x-internal-service'] !== 'true') {
-      return res.status(403).json({ status: 'error', message: 'Forbidden' });
-    }
-    return next();
-  },
+  requireInternalService,
   asyncHandler(tripController.releaseExpiredHolds)
 );
 
@@ -143,13 +133,19 @@ router.post(
  */
 router.post(
   '/:id/settle',
-  (req: any, res: any, next: any) => {
-    if (!req.headers['x-internal-service']) {
-      return res.status(403).json({ status: 'error', message: 'Forbidden' });
-    }
-    return next();
-  },
+  requireInternalService,
   asyncHandler(tripController.retrySettlement)
+);
+
+/**
+ * @route   POST /trips/:id/freeze-settlement
+ * @desc    Internal: manually trigger the T-1h multi-rider discount freeze
+ * @access  Internal (x-internal-service header required)
+ */
+router.post(
+  '/:id/freeze-settlement',
+  requireInternalService,
+  asyncHandler(tripController.freezeSettlement)
 );
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -309,8 +305,12 @@ router.post(
 router.post(
   '/:id/merge-route',
   (req: any, res: any, next: any) => {
-    // Allow internal service-to-service calls to bypass JWT auth
-    if (req.headers['x-internal-service']) return next();
+    // Internal service-to-service callers authenticate with the shared token;
+    // human drivers fall through to JWT auth. The advisory x-internal-service
+    // header alone no longer grants a bypass.
+    if (req.headers['x-internal-token'] || req.headers['x-internal-service']) {
+      return requireInternalService(req, res, next);
+    }
     return authenticateToken(req, res, next);
   },
   [

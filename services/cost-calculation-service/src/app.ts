@@ -1,7 +1,7 @@
 import express, { Application, NextFunction, Request, Response } from 'express';
 import cors from 'cors';
 import { AppError, errorHandler } from '@lessgo/shared';
-import { calculateCost, settleTrip, settleRider } from './cost.service';
+import { calculateCost, settleTrip, settleRider, freezeTripSettlement } from './cost.service';
 
 const app: Application = express();
 app.use(express.json());
@@ -62,6 +62,29 @@ app.get('/cost/settle-rider/:trip_id/:booking_id', async (req: Request, res: Res
     }
     console.error('[settle-rider] Error for trip %s booking %s:', trip_id, booking_id, error?.message ?? error);
     res.status(500).json({ status: 'error', message: `Failed to calculate rider settlement: ${error?.message ?? 'Unknown error'}` });
+  }
+});
+
+// ── GET /cost/freeze/:trip_id ─────────────────────────────────────────────────
+// T-1h multi-rider discount freeze: computes the optimized multi-stop route once
+// and returns each rider's discounted settlement for the booking-service to persist.
+// Returns 502 (defer, do not freeze) when the optimized route is unavailable.
+app.get('/cost/freeze/:trip_id', async (req: Request, res: Response, next: NextFunction) => {
+  const { trip_id } = req.params;
+  try {
+    const result = await freezeTripSettlement(trip_id);
+    res.json({ status: 'success', message: 'Discount freeze calculated successfully', data: result });
+  } catch (error: any) {
+    if (error?.status === 404 || error?.response?.status === 404) {
+      return next(new AppError(error.message ?? `Trip ${trip_id} not found`, 404));
+    }
+    if (error?.status === 502) {
+      // Optimized route unavailable — caller must defer and retry, never freeze undiscounted.
+      res.status(502).json({ status: 'error', message: error.message });
+      return;
+    }
+    console.error('[freeze] Error for trip %s:', trip_id, error?.message ?? error);
+    res.status(500).json({ status: 'error', message: `Failed to freeze trip settlement: ${error?.message ?? 'Unknown error'}` });
   }
 });
 

@@ -14,7 +14,7 @@
 import { Pool } from 'pg';
 import axios from 'axios';
 import { config } from '../config';
-import { haversineMeters, inferTripDirection, TripDirection } from '@lessgo/shared';
+import { haversineMeters, inferTripDirection, TripDirection, internalServiceHeaders } from '@lessgo/shared';
 
 // Re-exported from @lessgo/shared so existing import sites (trip.service.ts,
 // test mocks of this module) keep resolving haversineMeters from here.
@@ -565,7 +565,7 @@ export async function acceptMatch(matchId: string, driverId: string): Promise<vo
     }, {
       headers: {
         'Content-Type': 'application/json',
-        'x-internal-service': 'trip-service'
+        ...internalServiceHeaders('trip-service'),
       }
     });
     console.log(`[matching] Booking created for rider ${riderId} on trip ${trip_id}`);

@@ -390,3 +390,126 @@ export async function settleRider(tripId: string, bookingId: string): Promise<Ri
   const ctx = await buildSettleContext(trip, confirmedBookings);
   return computeRiderSettlement(target, ctx);
 }
+
+/** One rider's frozen, discounted settlement returned by the T-1h freeze. */
+export interface FrozenRider {
+  booking_id: string;
+  rider_id: string;
+  settled_amount: number;
+  settled_breakdown: SettledBreakdown & {
+    pre_discount_amount: number;
+    discount_amount: number;
+    optimized_route_mi: number;
+  };
+}
+
+export interface FreezeTripResult {
+  trip_id: string;
+  optimized_route_mi: number;
+  total_savings: number;
+  riders: FrozenRider[];
+}
+
+/**
+ * T-1h multi-rider discount freeze. With the rider list final, compute every
+ * rider's INDEPENDENT detour settlement (as if they were the only passenger),
+ * then ask routing for the single optimized multi-stop route. The difference
+ * between the summed independent detours and the one optimized detour is a
+ * savings pool, redistributed across riders by their billed detour share and
+ * clamped so no rider drops below their own ride-leg cost.
+ *
+ * Savings-pool redistribution is used instead of per-stop marginal attribution
+ * because Google's optimize_waypoints cannot enforce pickup-before-dropoff
+ * ordering, so a per-stop marginal split is not well defined (obs 2924).
+ *
+ * Throws a 502-tagged error if the optimized route is unavailable so the caller
+ * DEFERS — a trip is never frozen at an undiscounted amount.
+ */
+export async function freezeTripSettlement(tripId: string): Promise<FreezeTripResult> {
+  const trip = await fetchTripForSettle(tripId);
+  const confirmedBookings = await fetchConfirmedBookings(tripId);
+  const ctx = await buildSettleContext(trip, confirmedBookings);
+
+  // 1. Independent per-rider settlement (pre-discount) for every rider.
+  const base = await Promise.all(
+    confirmedBookings.map(async (booking: any) => ({
+      booking,
+      result: await computeRiderSettlement(booking, ctx),
+    }))
+  );
+
+  const multiRider = base.length >= 2;
+
+  // 2. Collect each rider's pickup + dropoff as waypoints for the optimized route.
+  const waypoints: string[] = [];
+  for (const { booking } of base) {
+    const p = parseLocation(booking.pickup_location);
+    const d = parseLocation(booking.dropoff_location);
+    if (p) waypoints.push(p.address ?? `${p.lat},${p.lng}`);
+    if (d) waypoints.push(d.address ?? `${d.lat},${d.lng}`);
+  }
+
+  // 3. Optimized multi-stop distance — only worth computing with >=2 riders and
+  //    real waypoints. A Maps failure here is fatal (502) so the caller defers.
+  let optimizedRouteMi = 0;
+  if (multiRider && waypoints.length > 0) {
+    try {
+      const optResp = await axios.post(`${ROUTING_SERVICE_URL}/route/optimize`, {
+        origin: ctx.originCoord,
+        destination: ctx.destCoord,
+        waypoints,
+      });
+      optimizedRouteMi = optResp.data?.distance_miles ?? 0;
+    } catch (err: any) {
+      throw Object.assign(
+        new Error(`Optimized route unavailable for trip ${tripId}: ${err?.message ?? 'routing error'}`),
+        { status: 502 }
+      );
+    }
+  }
+
+  // 4. Savings pool: summed independent detours minus the single optimized detour.
+  const expectedDetourMi = base.reduce((s, { result }) => s + (result.settled_breakdown.detour_mi ?? 0), 0);
+  const actualDetourMi   = Math.max(0, optimizedRouteMi - ctx.directDistanceMiles);
+  const savingsPoolMi    = multiRider ? Math.max(0, expectedDetourMi - actualDetourMi) : 0;
+  const savingsDollars   = savingsPoolMi * IRS_MILEAGE_RATE * DETOUR_SURCHARGE;
+  const totalDetourCost  = base.reduce((s, { result }) => s + (result.settled_breakdown.detour_cost ?? 0), 0);
+
+  // 5. Distribute the pool by each rider's billed detour share; clamp at their
+  //    own ride-leg floor (per-seat base x seats) so none is discounted below cost.
+  let appliedSavings = 0;
+  const riders: FrozenRider[] = base.map(({ booking, result }) => {
+    const seats        = parseInt(booking.seats_booked, 10) || 1;
+    const preDiscount  = result.amount_paid;
+    const riderDetour  = result.settled_breakdown.detour_cost ?? 0;
+    const floor        = parseFloat((result.settled_breakdown.rider_base_cost * seats).toFixed(2));
+
+    let discount = 0;
+    if (savingsDollars > 0 && totalDetourCost > 0) {
+      const raw        = savingsDollars * (riderDetour / totalDetourCost);
+      const settledRaw = Math.max(floor, preDiscount - raw);
+      discount         = parseFloat((preDiscount - settledRaw).toFixed(2));
+    }
+    const settledAmount = parseFloat((preDiscount - discount).toFixed(2));
+    appliedSavings += discount;
+
+    return {
+      booking_id: booking.booking_id ?? booking.id,
+      rider_id:   result.rider_id,
+      settled_amount: settledAmount,
+      settled_breakdown: {
+        ...result.settled_breakdown,
+        pre_discount_amount: parseFloat(preDiscount.toFixed(2)),
+        discount_amount:     discount,
+        optimized_route_mi:  parseFloat(optimizedRouteMi.toFixed(2)),
+      },
+    };
+  });
+
+  return {
+    trip_id:            tripId,
+    optimized_route_mi: parseFloat(optimizedRouteMi.toFixed(2)),
+    total_savings:      parseFloat(appliedSavings.toFixed(2)),
+    riders,
+  };
+}

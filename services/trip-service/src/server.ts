@@ -1,6 +1,7 @@
 import app from './app';
 import { config } from './config';
 import { startSettlementRetryJob } from './services/settlement.retry';
+import { startDiscountFreezeJob } from './services/discount-freeze.job';
 
 const PORT = config.port;
 
@@ -21,6 +22,7 @@ const server = app.listen(PORT, () => {
   ========================================
   `);
   startSettlementRetryJob();
+  startDiscountFreezeJob();
 });
 
 /**
