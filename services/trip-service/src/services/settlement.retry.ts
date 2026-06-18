@@ -1,6 +1,7 @@
 import axios from 'axios';
 import { Pool } from 'pg';
 import { config } from '../config';
+import { internalServiceHeaders } from '@lessgo/shared';
 
 const pool = new Pool({ connectionString: config.databaseUrl });
 const MAX_ATTEMPTS = 5;
@@ -43,7 +44,7 @@ async function runRetry(): Promise<void> {
             await axios.patch(
               `${config.bookingServiceUrl}/bookings/${bookingId}/final-price`,
               { final_price: rider.amount_paid },
-              { headers: { 'x-internal-service': 'trip-service' } }
+              { headers: internalServiceHeaders('trip-service') }
             ).catch((e: any) => console.error(`[SETTLE_RETRY] final-price failed for ${bookingId}:`, e.message));
           })
         );
@@ -58,7 +59,7 @@ async function runRetry(): Promise<void> {
         await axios.post(
           `${config.bookingServiceUrl}/bookings/${bookingId}/capture-payment`,
           {},
-          { headers: { 'x-internal-service': 'trip-service' } }
+          { headers: internalServiceHeaders('trip-service') }
         ).catch((e: any) => console.error(`[SETTLE_RETRY] capture failed for ${bookingId}:`, e.message));
       }
 

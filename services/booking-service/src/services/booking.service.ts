@@ -13,6 +13,7 @@ import {
   CreateBookingRequest,
   CreateRatingRequest,
   AppError,
+  internalServiceHeaders,
 } from '@lessgo/shared';
 
 const pool = new Pool({
@@ -1044,7 +1045,7 @@ export const authorizePayment = async (
             dropoff_lat: dest_lat,
             dropoff_lng: dest_lng,
           },
-          { headers: { 'x-internal-service': 'booking-service' } }
+          { headers: internalServiceHeaders('booking-service') }
         );
       }
     } catch (mergeErr) {
@@ -1399,6 +1400,44 @@ export const confirmRiderDropoff = async (
   return result.rows[0];
 };
 
+/**
+ * Batch-freeze discounted per-rider settlements at the T-1h discount checkpoint.
+ *
+ * Called internally by the trip-service freeze job with amounts already computed
+ * by the cost service's /cost/freeze endpoint. Writes into the SAME columns the
+ * drop-off freeze uses (settled_amount / settled_breakdown / settled_at, from
+ * migration 037). Idempotent and order-independent: each row is guarded by
+ * settled_at IS NULL, so a rider already frozen at drop-off keeps that value and
+ * a repeated sweep is a no-op.
+ *
+ * @param riders Per-rider frozen amounts from the cost service
+ * @returns Count of rows actually frozen by this call
+ */
+export const freezeBookingSettlements = async (
+  riders: Array<{ booking_id: string; settled_amount: number; settled_breakdown?: unknown }>
+): Promise<{ frozen: number }> => {
+  let frozen = 0;
+  for (const r of riders) {
+    if (r.booking_id == null || r.settled_amount == null) continue;
+    const result = await pool.query(
+      `UPDATE bookings
+       SET settled_amount    = CASE WHEN settled_at IS NULL THEN $2 ELSE settled_amount END,
+           settled_breakdown = CASE WHEN settled_at IS NULL THEN $3::jsonb ELSE settled_breakdown END,
+           settled_at        = CASE WHEN settled_at IS NULL THEN NOW() ELSE settled_at END,
+           updated_at        = current_timestamp
+       WHERE booking_id = $1 AND settled_at IS NULL
+       RETURNING booking_id`,
+      [
+        r.booking_id,
+        r.settled_amount,
+        r.settled_breakdown != null ? JSON.stringify(r.settled_breakdown) : null,
+      ]
+    );
+    frozen += result.rowCount ?? 0;
+  }
+  return { frozen };
+};
+
 export default {
   createBooking,
   getBookingById,
@@ -1418,4 +1457,5 @@ export default {
   writeFinalPrice,
   confirmRiderPickup,
   confirmRiderDropoff,
+  freezeBookingSettlements,
 };

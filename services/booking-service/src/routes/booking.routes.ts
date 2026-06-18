@@ -1,7 +1,7 @@
 import express from 'express';
 import * as bookingController from '../controllers/booking.controller';
 import * as bookingService from '../services/booking.service';
-import { authenticateToken, requireVerifiedStudent, asyncHandler } from '@lessgo/shared';
+import { authenticateToken, requireVerifiedStudent, requireInternalService, asyncHandler } from '@lessgo/shared';
 import { body, validationResult } from 'express-validator';
 
 const router = express.Router();
@@ -42,12 +42,9 @@ router.post(
     body('rider_id').notEmpty().withMessage('Rider ID is required').isUUID(),
     body('seats_booked').isInt({ min: 1, max: 8 }).withMessage('Seats booked must be 1-8'),
   ],
+  requireInternalService,
   validateRequest,
   asyncHandler(async (req: express.Request, res: express.Response) => {
-    if (req.headers['x-internal-service'] !== 'trip-service') {
-      res.status(403).json({ status: 'error', message: 'Forbidden' });
-      return;
-    }
     const { rider_id, ...bookingData } = req.body;
     const result = await bookingService.createBooking(rider_id, bookingData);
     res.status(201).json({ status: 'success', data: result, message: 'Booking created successfully' });
@@ -116,12 +113,29 @@ router.get(
 );
 
 // Internal service-to-service route used by cost-calculation-service for settlement.
-// No auth check — only reachable from within the service mesh (not exposed via API gateway).
+// Authenticated with the shared internal-service token (not exposed via gateway).
 router.get(
   '/trip/:tripId/settle',
+  requireInternalService,
   asyncHandler(async (req: express.Request, res: express.Response) => {
     const bookings = await bookingService.getBookingsByTripId(req.params.tripId);
     res.json({ status: 'success', data: bookings });
+  })
+);
+
+// Internal: batch-freeze discounted per-rider settlements at the T-1h checkpoint.
+// Called by trip-service's discount-freeze job with amounts from the cost service.
+router.post(
+  '/trip/:tripId/freeze-settlements',
+  requireInternalService,
+  asyncHandler(async (req: express.Request, res: express.Response) => {
+    const { riders } = req.body;
+    if (!Array.isArray(riders)) {
+      res.status(400).json({ status: 'error', message: 'riders array is required' });
+      return;
+    }
+    const result = await bookingService.freezeBookingSettlements(riders);
+    res.json({ status: 'success', data: result, message: 'Settlements frozen' });
   })
 );
 
@@ -129,11 +143,8 @@ router.get(
 // Called by trip-service on trip completion.
 router.patch(
   '/:id/final-price',
+  requireInternalService,
   asyncHandler(async (req: express.Request, res: express.Response) => {
-    if (req.headers['x-internal-service'] !== 'trip-service') {
-      res.status(403).json({ status: 'error', message: 'Forbidden' });
-      return;
-    }
     const { final_price } = req.body;
     if (typeof final_price !== 'number' || final_price <= 0) {
       res.status(400).json({ status: 'error', message: 'final_price must be a positive number' });

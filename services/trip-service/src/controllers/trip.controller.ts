@@ -2,8 +2,9 @@ import { Response } from 'express';
 import axios from 'axios';
 import { Pool } from 'pg';
 import * as tripService from '../services/trip.service';
-import { AuthRequest, AppError, successResponse, errorResponse, CreateTripRequest, SearchTripsRequest, TripStatus, SJSU_COORDS, SJSU_RADIUS_METERS } from '@lessgo/shared';
+import { AuthRequest, AppError, successResponse, errorResponse, CreateTripRequest, SearchTripsRequest, TripStatus, SJSU_COORDS, SJSU_RADIUS_METERS, internalServiceHeaders } from '@lessgo/shared';
 import { config } from '../config';
+import { freezeTripNow } from '../services/discount-freeze.job';
 
 const pool = new Pool({ connectionString: config.databaseUrl });
 
@@ -483,7 +484,7 @@ export const updateTripState = async (req: AuthRequest, res: Response): Promise<
                 await axios.patch(
                   `${config.bookingServiceUrl}/bookings/${bookingId}/final-price`,
                   { final_price: rider.amount_paid },
-                  { headers: { 'x-internal-service': 'trip-service' } }
+                  { headers: internalServiceHeaders('trip-service') }
                 );
               } catch (fpErr) {
                 console.error(`[FINAL_PRICE] Failed for booking ${bookingId}:`, fpErr);
@@ -972,7 +973,7 @@ export const retrySettlement = async (req: AuthRequest, res: Response): Promise<
         await axios.patch(
           `${config.bookingServiceUrl}/bookings/${bookingId}/final-price`,
           { final_price: rider.amount_paid },
-          { headers: { 'x-internal-service': 'trip-service' } }
+          { headers: internalServiceHeaders('trip-service') }
         ).catch((e: any) => console.error(`[SETTLE] final-price failed for ${bookingId}:`, e.message));
       })
     );
@@ -986,7 +987,7 @@ export const retrySettlement = async (req: AuthRequest, res: Response): Promise<
     await axios.post(
       `${config.bookingServiceUrl}/bookings/${bookingId}/capture-payment`,
       {},
-      { headers: { 'x-internal-service': 'trip-service' } }
+      { headers: internalServiceHeaders('trip-service') }
     ).catch((e: any) => console.error(`[SETTLE] capture failed for ${bookingId}:`, e.message));
   }
 
@@ -997,6 +998,18 @@ export const retrySettlement = async (req: AuthRequest, res: Response): Promise<
   ).catch(() => {});
 
   res.json({ status: 'success', message: `Settlement completed for trip ${id}`, data: { settlement, captured: toCapture.length } });
+};
+
+/**
+ * POST /trips/:id/freeze-settlement
+ * Internal: manually trigger the T-1h multi-rider discount freeze for a trip.
+ * Idempotent — re-freezing an already-frozen trip is a no-op. Throws (→ 5xx) if
+ * the optimized route is unavailable so the trip stays unfrozen for a retry.
+ */
+export const freezeSettlement = async (req: AuthRequest, res: Response): Promise<void> => {
+  const { id } = req.params;
+  const result = await freezeTripNow(id);
+  res.json({ status: 'success', message: `Settlement frozen for trip ${id}`, data: result });
 };
 
 async function riderHasBookingForTrip(authHeader: string | undefined, tripId: string, userId: string): Promise<boolean> {

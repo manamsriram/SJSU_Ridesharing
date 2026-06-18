@@ -2,7 +2,13 @@
 export * from './types';
 
 // Middleware
-export { authenticateToken, requireVerifiedStudent, requireDriver } from './middleware/auth';
+export {
+  authenticateToken,
+  requireVerifiedStudent,
+  requireDriver,
+  requireInternalService,
+  internalServiceHeaders,
+} from './middleware/auth';
 export type { AuthRequest } from './middleware/auth';
 export { AppError, errorHandler, notFoundHandler, asyncHandler } from './middleware/errorHandler';
 export { requestLogger, devLogger } from './middleware/logger';

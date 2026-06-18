@@ -1,8 +1,72 @@
 import { Request, Response, NextFunction } from 'express';
+import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
 import { getSecretValue } from '../utils/secrets';
 import { JWTPayload } from '../types';
 import { errorResponse } from '../utils/response';
+
+const INTERNAL_TOKEN_HEADER = 'x-internal-token';
+const INTERNAL_SERVICE_HEADER = 'x-internal-service';
+
+/** Constant-time string compare; false on length mismatch (never throws). */
+const safeEqual = (a: string, b: string): boolean => {
+  const bufA = Buffer.from(a);
+  const bufB = Buffer.from(b);
+  if (bufA.length !== bufB.length) return false;
+  return crypto.timingSafeEqual(bufA, bufB);
+};
+
+/**
+ * Authenticate a service-to-service call with a shared secret instead of a
+ * spoofable identity header. The caller must present INTERNAL_SERVICE_TOKEN in
+ * the x-internal-token header. The x-internal-service header is advisory only
+ * (logging/routing) and is NOT trusted for authorization.
+ *
+ * Fail-closed in production: if the token is not configured the call is rejected
+ * with 503. In non-production the call is allowed (with a warning) so local dev
+ * and tests work without provisioning the secret.
+ */
+export const requireInternalService = (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): void => {
+  const expected = getSecretValue('INTERNAL_SERVICE_TOKEN');
+
+  if (!expected) {
+    if (process.env.NODE_ENV === 'production') {
+      errorResponse(res, 'Internal service authentication not configured', 503);
+      return;
+    }
+    console.warn(
+      '[requireInternalService] INTERNAL_SERVICE_TOKEN not set — allowing internal call (non-production only)'
+    );
+    next();
+    return;
+  }
+
+  const provided = req.headers[INTERNAL_TOKEN_HEADER];
+  if (typeof provided !== 'string' || !safeEqual(provided, expected)) {
+    errorResponse(res, 'Forbidden', 403);
+    return;
+  }
+
+  next();
+};
+
+/**
+ * Build headers for an outbound internal service-to-service request. Sets the
+ * advisory service name and, when INTERNAL_SERVICE_TOKEN is configured, the
+ * shared-secret token consumed by requireInternalService on the callee.
+ *
+ * @param serviceName Name of the calling service (advisory; e.g. 'trip-service')
+ */
+export const internalServiceHeaders = (serviceName: string): Record<string, string> => {
+  const headers: Record<string, string> = { [INTERNAL_SERVICE_HEADER]: serviceName };
+  const token = getSecretValue('INTERNAL_SERVICE_TOKEN');
+  if (token) headers[INTERNAL_TOKEN_HEADER] = token;
+  return headers;
+};
 
 /**
  * Extended Express Request interface with user data from JWT
