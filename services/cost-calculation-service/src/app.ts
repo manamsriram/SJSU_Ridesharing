@@ -57,7 +57,7 @@ app.get('/cost/settle-rider/:trip_id/:booking_id', async (req: Request, res: Res
     const result = await settleRider(trip_id, booking_id);
     res.json({ status: 'success', message: 'Rider settlement calculated successfully', data: result });
   } catch (error: any) {
-    if (error?.status === 404 || error?.response?.status === 404) {
+    if (error?.statusCode === 404 || error?.status === 404 || error?.response?.status === 404) {
       return next(new AppError(error.message ?? `Trip ${trip_id} / booking ${booking_id} not found`, 404));
     }
     console.error('[settle-rider] Error for trip %s booking %s:', trip_id, booking_id, error?.message ?? error);
