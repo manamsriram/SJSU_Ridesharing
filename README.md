@@ -4,6 +4,31 @@
 
 ---
 
+## 🎬 Demo & Walkthrough
+
+> **Note:** Replace the placeholder links below with your actual demo GIF/video URLs.
+
+### App Demo
+
+![LessGo App Demo](https://your-demo-gif-url-here.gif)
+
+> _Add a screen-recorded GIF or image showcasing the app flow — e.g., searching for a ride, booking, and real-time tracking._
+
+### Walkthrough Video
+
+[![LessGo Walkthrough Video](https://img.youtube.com/vi/YOUR_VIDEO_ID/maxresdefault.jpg)](https://www.youtube.com/watch?v=YOUR_VIDEO_ID)
+
+> _Replace `YOUR_VIDEO_ID` with your YouTube video ID (e.g., `dQw4w9WgXcQ`). The thumbnail above will link directly to the video._
+
+**What the walkthrough covers:**
+- SJSU ID verification and onboarding
+- Searching and booking a ride as a rider
+- Posting a trip as a driver
+- Real-time chat and location tracking
+- Stripe payment flow
+
+---
+
 ## Why LessGo?
 
 Uber and Lyft are great for city-wide rides, but they're not built for campus life. LessGo is different:
