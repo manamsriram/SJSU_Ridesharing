@@ -4,24 +4,26 @@
 
 ---
 
-## 🎬 Demo & Walkthrough
+## 🎬 Walkthrough & Demo
 
-> **Note:** Replace the placeholder links below with your actual demo GIF/video URLs.
+### 🎥 Full Walkthrough Video
 
-### App Demo
+<a href="https://youtu.be/l79FVVxRbPU" target="_blank">
+  <img src="https://img.youtube.com/vi/l79FVVxRbPU/maxresdefault.jpg" alt="LessGo Walkthrough Video" width="800"/>
+</a>
 
-![LessGo App Demo](https://your-demo-gif-url-here.gif)
+> Click the thumbnail above to watch the full walkthrough on YouTube.
 
-> _Add a screen-recorded GIF or image showcasing the app flow — e.g., searching for a ride, booking, and real-time tracking._
+### 📱 App Demo Simulation
 
-### Walkthrough Video
+<a href="https://youtube.com/shorts/KEm_HKYem6s?feature=share" target="_blank">
+  <img src="https://img.youtube.com/vi/KEm_HKYem6s/maxresdefault.jpg" alt="LessGo App Demo" width="400"/>
+</a>
 
-[![LessGo Walkthrough Video](https://img.youtube.com/vi/YOUR_VIDEO_ID/maxresdefault.jpg)](https://www.youtube.com/watch?v=YOUR_VIDEO_ID)
+> Click the thumbnail above to watch the app demo simulation on YouTube.
 
-> _Replace `YOUR_VIDEO_ID` with your YouTube video ID (e.g., `dQw4w9WgXcQ`). The thumbnail above will link directly to the video._
-
-**What the walkthrough covers:**
-- SJSU ID verification and onboarding
+**Walkthrough covers:**
+- Onboarding
 - Searching and booking a ride as a rider
 - Posting a trip as a driver
 - Real-time chat and location tracking
