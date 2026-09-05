@@ -138,14 +138,17 @@ async function fetchCandidates(req: TripRequestRow): Promise<CandidateTrip[]> {
                   AND u.role = 'Driver'
      WHERE t.status IN ('en_route', 'in_progress')
        AND t.seats_available >= 1
-       -- Rider's pickup must lie within 1.5 km of the driver's origin→destination route line
-       AND ST_DWithin(
-             ST_MakeLine(
-               t.origin_point::geometry,
-               t.destination_point::geometry
-             )::geography,
-             ${riderPoint},
-             1500
+       -- Rider's pickup must lie within 1.5 km of the driver's route. Prefer the real
+       -- road-network route_line (decoded Google Directions polyline, set at trip
+       -- creation); fall back to the old origin→destination chord for legacy trips or
+       -- trips where the routing-service call failed at creation (route_line IS NULL).
+       AND (
+             (t.route_line IS NOT NULL AND ST_DWithin(t.route_line, ${riderPoint}, 1500))
+             OR
+             (t.route_line IS NULL AND ST_DWithin(
+                   ST_MakeLine(t.origin_point::geometry, t.destination_point::geometry)::geography,
+                   ${riderPoint}, 1500
+                 ))
            )
        -- Require matching direction when both are known; fall back to destination
        -- proximity only for legacy rows where direction wasn't recorded (NULL).

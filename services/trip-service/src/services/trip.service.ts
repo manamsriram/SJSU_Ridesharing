@@ -134,12 +134,39 @@ export const createTrip = async (
     destinationPoint.lat, destinationPoint.lng
   );
 
+  // Fetch the actual road-network route once at creation, so carpool matching
+  // (fetchCandidates in matching.service.ts) can test rider pickups against real
+  // route geometry instead of a straight line. Must not block trip creation if
+  // routing-service is unreachable — falls back to NULL route_line.
+  let encodedPolyline: string | null = null;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const res = await axios.post(
+        `${config.routingServiceUrl}/route/calculate`,
+        { origin: `${originPoint.lat},${originPoint.lng}`, destination: `${destinationPoint.lat},${destinationPoint.lng}` },
+        { timeout: 4000 }
+      );
+      encodedPolyline = res.data?.polyline ?? null;
+      break;
+    } catch (err) {
+      if (attempt === 1) {
+        console.warn('[createTrip] routing-service route/calculate failed after retry; route_line = NULL', err instanceof Error ? err.message : err);
+      }
+    }
+  }
+
   const query = `
     INSERT INTO trips (
       driver_id, origin, destination, origin_point, destination_point,
-      departure_time, seats_available, recurrence, status, direction
+      departure_time, seats_available, recurrence, status, direction, route_line
     )
-    VALUES ($1, $2, $3, ST_SetSRID(ST_MakePoint($4, $5), 4326), ST_SetSRID(ST_MakePoint($6, $7), 4326), $8, $9, $10, $11, $12)
+    VALUES (
+      $1, $2, $3,
+      ST_SetSRID(ST_MakePoint($4, $5), 4326),
+      ST_SetSRID(ST_MakePoint($6, $7), 4326),
+      $8, $9, $10, $11, $12,
+      CASE WHEN $13::text IS NULL THEN NULL ELSE ST_SetSRID(ST_GeomFromEncodedPolyline($13), 4326)::geography END
+    )
     RETURNING
       trip_id, driver_id, origin, destination,
       ST_X(origin_point::geometry) as origin_lng,
@@ -162,6 +189,7 @@ export const createTrip = async (
     recurrence || null,
     TripStatus.Pending,
     direction,
+    encodedPolyline,
   ];
 
   const result = await pool.query(query, values);
