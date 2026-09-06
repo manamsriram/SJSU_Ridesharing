@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import axios from 'axios';
+import { geocodeTripLocations } from '../../services/trip-service/src/utils/geocoding';
 
 process.env.DATABASE_URL = 'postgres://carpool-route-test-db';
 process.env.NODE_ENV = 'test';
@@ -22,10 +23,7 @@ vi.mock('axios', () => ({
 }));
 
 vi.mock('../../services/trip-service/src/utils/geocoding', () => ({
-  geocodeTripLocations: vi.fn().mockResolvedValue({
-    originPoint: { lat: 37.7749, lng: -122.4194 },
-    destinationPoint: { lat: 37.3352, lng: -121.8811 },
-  }),
+  geocodeTripLocations: vi.fn(),
 }));
 
 vi.mock('../../services/trip-service/src/utils/redisClient', () => ({
@@ -39,6 +37,10 @@ describe('createTrip: route_line population', () => {
     vi.resetModules();
     queryMock.mockReset();
     vi.mocked(axios.post).mockReset();
+    vi.mocked(geocodeTripLocations).mockReset().mockResolvedValue({
+      originPoint: { lat: 37.7749, lng: -122.4194 },
+      destinationPoint: { lat: 37.3352, lng: -121.8811 },
+    });
   });
 
   afterEach(() => {

@@ -79,7 +79,10 @@ export interface CandidateTrip {
 async function fetchCandidates(req: TripRequestRow): Promise<CandidateTrip[]> {
   const riderPoint = `ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography`;
 
-  // Stage 1a: pending trips within 5 km and ±30 min departure window
+  // Stage 1a: pending trips within 1.5 km of the driver's route and ±30 min departure window.
+  // Prefers the real road-network route_line (decoded Google Directions polyline, set at
+  // trip creation); falls back to the old origin→destination chord for legacy trips or
+  // trips where the routing-service call failed at creation (route_line IS NULL).
   const pendingResult = await pool.query<CandidateTrip>(
     `SELECT
        t.trip_id,
@@ -102,10 +105,13 @@ async function fetchCandidates(req: TripRequestRow): Promise<CandidateTrip[]> {
                   AND u.role = 'Driver'
      WHERE t.status = 'pending'
        AND t.seats_available >= 1
-       AND ST_DWithin(
-             t.origin_point::geography,
-             ${riderPoint},
-             5000
+       AND (
+             (t.route_line IS NOT NULL AND ST_DWithin(t.route_line, ${riderPoint}, 1500))
+             OR
+             (t.route_line IS NULL AND ST_DWithin(
+                   ST_MakeLine(t.origin_point::geometry, t.destination_point::geometry)::geography,
+                   ${riderPoint}, 1500
+                 ))
            )
        AND t.departure_time BETWEEN ($3::timestamptz - INTERVAL '30 minutes')
                                 AND ($3::timestamptz + INTERVAL '30 minutes')
